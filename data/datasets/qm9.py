@@ -50,14 +50,17 @@ class QM9Dataset(InMemoryComplexDataset):
     def process(self):
         # At this stage, the graph dataset is already downloaded and processed
         print(f"Processing cell complex dataset for {self.name}")
+
+        print("Modify QM9 such that one-hot-encoding becomes scalar and delete other features for now")
+        transform = CollapseDeleteQM9Features()
         if self._subset:
-            train_data = QM9(self.raw_dir)[:1000]
-            val_data = QM9(self.raw_dir)[1000:2000]
-            test_data = QM9(self.raw_dir)[2000:3000]
+            train_data = QM9(self.raw_dir, transform=transform)[:1000]
+            val_data = QM9(self.raw_dir, transform=transform)[1000:2000]
+            test_data = QM9(self.raw_dir, transform=transform)[2000:3000]
         else:
-            train_data = QM9(self.raw_dir)[:10000]
-            val_data = QM9(self.raw_dir)[10000:20000]
-            test_data = QM9(self.raw_dir)[20000:]
+            train_data = QM9(self.raw_dir, transform=transform)[:10000]
+            val_data = QM9(self.raw_dir, transform=transform)[10000:20000]
+            test_data = QM9(self.raw_dir, transform=transform)[20000:]
 
         data_list = []
         idx = []
@@ -141,3 +144,25 @@ def load_qm9_graph_dataset(root, subset=True):
     return data, idx[0], idx[1], idx[2]
 
 
+class CollapseDeleteQM9Features(object):
+    """
+    This transform mofifies the labels vector per data sample to only keep 
+    the label for a specific target (there are 19 targets in QM9).
+
+    Note: for this practical, we have hardcoded the target to be target #0,
+    i.e. the electric dipole moment of a drug-like molecule.
+    (https://en.wikipedia.org/wiki/Electric_dipole_moment)
+    """
+    def __call__(self, data):
+        target = 0 # we hardcoded choice of target  
+        data.y = data.y[:, target]
+
+        # Get the first 5 features (atom type, one-hot H, C, N, O, F) of every atom
+        # Get the indices at which it is non-zero (row, col), then just get col.
+        # This is to convert from one-hot to scalar, keeping the dimensions ([node_num, 1] shape)
+        # We, for now, delete the rest of the features.
+        data.x = torch.nonzero(data.x[:, :5])[:, 1:2]
+
+        # Edges are also one-hot, we convert to scalar, this time not keeping the dimensions ([edge_num] shape)
+        data.edge_attr = torch.nonzero(data.edge_attr[:, :])[:, 1]
+        return data
