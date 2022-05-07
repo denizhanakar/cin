@@ -33,11 +33,11 @@ from torch._six import container_abcs, string_classes, int_classes
 from definitions import ROOT_DIR
 from data.complex import Cochain, CochainBatch, Complex, ComplexBatch
 from data.datasets import (
-    load_sr_graph_dataset, load_tu_graph_dataset, load_zinc_graph_dataset, load_ogb_graph_dataset,
+    load_sr_graph_dataset, load_tu_graph_dataset, load_zinc_graph_dataset, load_qm9_graph_dataset, load_ogb_graph_dataset,
     load_ring_transfer_dataset, load_ring_lookup_dataset)
 from data.datasets import (
     SRDataset, ClusterDataset, TUDataset, ComplexDataset, FlowDataset,
-    OceanDataset, ZincDataset, CSLDataset, OGBDataset, RingTransferDataset, RingLookupDataset,
+    OceanDataset, ZincDataset, QM9Dataset, CSLDataset, OGBDataset, RingTransferDataset, RingLookupDataset,
     DummyDataset, DummyMolecularDataset)
 
 
@@ -113,6 +113,7 @@ class DataLoader(torch.utils.data.DataLoader):
 def load_dataset(name, root=os.path.join(ROOT_DIR, 'datasets'), max_dim=2, fold=0,
                  init_method='sum', n_jobs=2, **kwargs) -> ComplexDataset:
     """Returns a ComplexDataset with the specified name and initialised with the given params."""
+    breakpoint()
     if name.startswith('sr'):
         dataset = SRDataset(os.path.join(root, 'SR_graphs'), name, max_dim=max_dim,
             num_classes=16, max_ring_size=kwargs.get('max_ring_size', None),
@@ -159,6 +160,9 @@ def load_dataset(name, root=os.path.join(ROOT_DIR, 'datasets'), max_dim=2, fold=
         dataset = RingLookupDataset(os.path.join(root, name), nodes=kwargs['max_ring_size'])
     elif name == 'ZINC':
         dataset = ZincDataset(os.path.join(root, name), max_ring_size=kwargs['max_ring_size'],
+                              use_edge_features=kwargs['use_edge_features'], n_jobs=n_jobs)
+    elif name == 'QM9':
+        dataset = QM9Dataset(os.path.join(root, name), max_ring_size=kwargs['max_ring_size'],
                               use_edge_features=kwargs['use_edge_features'], n_jobs=n_jobs)
     elif name == 'ZINC-FULL':
         dataset = ZincDataset(os.path.join(root, name), subset=False, max_ring_size=kwargs['max_ring_size'],

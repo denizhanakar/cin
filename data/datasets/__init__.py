@@ -5,6 +5,7 @@ from data.datasets.tu import TUDataset, load_tu_graph_dataset
 from data.datasets.flow import FlowDataset
 from data.datasets.ocean import OceanDataset
 from data.datasets.zinc import ZincDataset, load_zinc_graph_dataset
+from data.datasets.qm9 import QM9Dataset, load_qm9_graph_dataset
 from data.datasets.dummy import DummyDataset, DummyMolecularDataset
 from data.datasets.csl import CSLDataset
 from data.datasets.ogb import OGBDataset, load_ogb_graph_dataset

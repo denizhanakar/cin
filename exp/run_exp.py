@@ -1,4 +1,4 @@
-import os; os.environ["CUDA_VISIBLE_DEVICES"] = "1"; os.environ["PYTHONBREAKPOINT"] = "0" # IMPORTANT: SET CUDA AND BREAKPOINTS
+import os; os.environ["CUDA_VISIBLE_DEVICES"] = "";# os.environ["PYTHONBREAKPOINT"] = "0" # IMPORTANT: SET CUDA AND BREAKPOINTS
 import numpy as np
 import copy
 import pickle
