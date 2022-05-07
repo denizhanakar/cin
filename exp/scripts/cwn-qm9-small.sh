@@ -3,11 +3,11 @@
 python -m exp.run_mol_exp \
   --device 0 \
   --start_seed 0 \
-  --stop_seed 3 \
-  --exp_name cwn-zinc-full-small \
-  --dataset ZINC-FULL \
-  --train_eval_period 25 \
-  --epochs 150 \
+  --stop_seed 9 \
+  --exp_name cwn-zinc-small \
+  --dataset QM9 \
+  --train_eval_period 20 \
+  --epochs 1000 \
   --batch_size 128 \
   --drop_rate 0.0 \
   --drop_position lin2 \
@@ -29,6 +29,6 @@ python -m exp.run_mol_exp \
   --use_coboundaries True \
   --use_edge_features \
   --early_stop \
-  --lr_scheduler_patience 5 \
+  --lr_scheduler_patience 20 \
   --dump_curves \
   --preproc_jobs 32
