@@ -32,6 +32,7 @@ import torch
 import os.path as osp
 
 from torch_geometric.data import Dataset
+from typing import Tuple
 from itertools import repeat, product
 from data.complex import Complex, Cochain
 from torch import Tensor
@@ -184,7 +185,7 @@ class InMemoryComplexDataset(ComplexDataset):
             
         return data
     
-    def _get_cochain(self, dim, idx) -> (Cochain, bool):
+    def _get_cochain(self, dim, idx) -> Tuple[Cochain, bool]:
         
         if dim < 0 or dim > self.max_dim:
             raise ValueError(f'The current dataset does not have cochains at dimension {dim}.')
