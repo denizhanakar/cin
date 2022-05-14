@@ -4,7 +4,7 @@ python -m exp.run_mol_exp \
   --device 0 \
   --start_seed 0 \
   --stop_seed 9 \
-  --exp_name cwn-zinc-small \
+  --exp_name cwn-qm9-small \
   --dataset QM9 \
   --train_eval_period 20 \
   --epochs 1000 \
