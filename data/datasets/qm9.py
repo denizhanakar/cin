@@ -53,6 +53,8 @@ class QM9Dataset(InMemoryComplexDataset):
 
         print("Modify QM9 such that one-hot-encoding becomes scalar and delete other features for now")
         transform = CollapseDeleteQM9Features()
+        # transform = None
+        
         if self._subset:
             train_data = QM9(self.raw_dir, transform=transform)[:1000]
             val_data = QM9(self.raw_dir, transform=transform)[1000:2000]
@@ -125,7 +127,7 @@ def load_qm9_graph_dataset(root, subset=True):
     data = train_data + val_data + test_data
 
     if subset:
-        assert len(train_data) == 10000
+        assert len(train_data) == 1000
         assert len(val_data) == 1000
         assert len(test_data) == 1000
     else:
@@ -161,8 +163,11 @@ class CollapseDeleteQM9Features(object):
         # Get the indices at which it is non-zero (row, col), then just get col.
         # This is to convert from one-hot to scalar, keeping the dimensions ([node_num, 1] shape)
         # We, for now, delete the rest of the features.
-        data.x = torch.nonzero(data.x[:, :5])[:, 1:2]
+        # data.x = torch.cat((torch.nonzero(data.x[:, :5])[:, 1:2], data.x[:, 10:11]), 1)
+        data.x = torch.cat((torch.nonzero(data.x[:, :5])[:, 1:2], data.x[:, 5:]), 1)
 
         # Edges are also one-hot, we convert to scalar, this time not keeping the dimensions ([edge_num] shape)
         data.edge_attr = torch.nonzero(data.edge_attr[:, :])[:, 1]
+        # We actually keep the edge attribute as is.
+
         return data

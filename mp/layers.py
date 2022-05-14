@@ -442,9 +442,9 @@ class EmbedVEWithReduce(AbstractEmbedVEWithReduce):
 class OGBEmbedVEWithReduce(AbstractEmbedVEWithReduce):
     
     def __init__(self,
-                 v_embed_layer: AtomEncoder,
-                 e_embed_layer: Optional[BondEncoder],
-                 init_reduce: InitReduceConv):
+                 v_embed_layer,
+                 e_embed_layer,
+                 init_reduce):
         super(OGBEmbedVEWithReduce, self).__init__(v_embed_layer, e_embed_layer, init_reduce)
 
     def _prepare_v_inputs(self, v_params):
