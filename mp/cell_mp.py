@@ -345,11 +345,13 @@ class CochainMessagePassing(torch.nn.Module):
             coll_dict = self.__collect__(self.__user_args__, index, size, adjacency, kwargs)
 
             # Up message and aggregation
+            # Get values from `coll_dict` that are keyed by the args in the message_{adjacency} function.
             msg_kwargs = self.inspector.distribute(f'message_{adjacency}', coll_dict)
+            # Get the function for the relevant adjacency.
             message = self.get_msg_func(adjacency)
             out = message(**msg_kwargs)
             
-            # import pdb; pdb.set_trace()
+            import pdb; pdb.set_trace()
             aggr_kwargs = self.inspector.distribute(f'aggregate_{adjacency}', coll_dict)
             aggregate = self.get_agg_func(adjacency)
             return aggregate(out, **aggr_kwargs)
@@ -369,6 +371,7 @@ class CochainMessagePassing(torch.nn.Module):
 
         up_out, down_out = None, None
         # Up messaging and aggregation
+        # IS THE MESSAGING NOT ALTERED AT ALL?
         if up_index is not None:
             up_out = self.__message_and_aggregate__(up_index, 'up', up_size, **kwargs)
 

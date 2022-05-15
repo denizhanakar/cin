@@ -182,12 +182,20 @@ class SparseCINCochainConv(CochainMessagePassing):
         self.reset_parameters()
 
     def forward(self, cochain: CochainMessagePassingParams):
+        """
+        The paper specifies (1+\epsilon) and also a sum across all \tau from the boundary of \sigma.
+        We first get the boundary via self.propagate(?)
+        Then we add cochain.x to out_up, an up message output.
+        We finally combine both into an NN and return.
+        """
         out_up, _, out_boundaries = self.propagate(cochain.up_index, cochain.down_index,
                                               cochain.boundary_index, x=cochain.x,
+                                              pos=cochain.pos,
                                               up_attr=cochain.kwargs['up_attr'],
                                               boundary_attr=cochain.kwargs['boundary_attr'])
 
         # As in GIN, we can learn an injective update function for each multi-set
+        # Add 
         out_up += (1 + self.eps1) * cochain.x
         out_boundaries += (1 + self.eps2) * cochain.x
         out_up = self.update_up_nn(out_up)

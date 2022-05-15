@@ -165,7 +165,7 @@ class EmbedSparseCIN(torch.nn.Module):
         return self.__class__.__name__
 
 
-class QM9_EmbedSparseCIN(torch.nn.Module):
+class QM9EmbedSparseCIN(torch.nn.Module):
     """
     A cellular version of GIN with some tailoring to nimbly work on molecules from the ogbg-mol* dataset.
     It uses OGB atom and bond encoders.
@@ -180,7 +180,7 @@ class QM9_EmbedSparseCIN(torch.nn.Module):
                  readout_dims=(0, 1, 2), final_readout='sum', apply_dropout_before='lin2',
                  init_reduce='sum', embed_edge=False, embed_dim=None, use_coboundaries=False,
                  graph_norm='bn'):
-        super(QM9_EmbedSparseCIN, self).__init__()
+        super(QM9EmbedSparseCIN, self).__init__()
 
         self.max_dim = max_dim
         if readout_dims is not None:
@@ -246,6 +246,9 @@ class QM9_EmbedSparseCIN(torch.nn.Module):
         return xs
 
     def forward(self, data: ComplexBatch, include_partial=False):
+        """
+        include_partial: Keep track of each component's output (for debugging?).
+        """
         act = get_nonlinearity(self.nonlinearity, return_module=False)
         xs, jump_xs = None, None
         res = {}
@@ -263,6 +266,7 @@ class QM9_EmbedSparseCIN(torch.nn.Module):
         for c, conv in enumerate(self.convs):
             params = data.get_all_cochain_params(max_dim=self.max_dim, include_down_features=False)
             start_to_process = 0
+            # Send Cochain Messages through the convolution.
             xs = conv(*params, start_to_process=start_to_process)
             # Apply dropout on the output of the conv layer
             for i, x in enumerate(xs):
@@ -282,6 +286,7 @@ class QM9_EmbedSparseCIN(torch.nn.Module):
         if self.jump_mode is not None:
             xs = self.jump_complex(jump_xs)
 
+        # Get joint representation for $p \in 0, 1, 2$ by applying self.readout.
         xs = pool_complex(xs, data, self.max_dim, self.readout)
         # Select the dimensions we want at the end.
         xs = [xs[i] for i in self.readout_dims]
@@ -290,6 +295,7 @@ class QM9_EmbedSparseCIN(torch.nn.Module):
             for k in range(len(xs)):
                 res[f"pool_{k}"] = xs[k]
         
+        # Compute overall representation.
         new_xs = []
         for i, x in enumerate(xs):
             if self.apply_dropout_before == 'lin1':

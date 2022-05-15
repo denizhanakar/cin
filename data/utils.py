@@ -512,12 +512,14 @@ def convert_graph_dataset_with_rings(dataset, max_ring_size=7, include_down_adj=
     # Process the dataset in parallel
     parallel = ProgressParallel(n_jobs=n_jobs, use_tqdm=True, total=len(dataset))
     # It is important we supply a numpy array here. tensors seem to slow joblib down significantly.
+    # We then add data.pos so we preserve that for future use by the model.
     complexes = parallel(delayed(compute_ring_2complex)(
         maybe_convert_to_numpy(data.x), maybe_convert_to_numpy(data.edge_index),
         maybe_convert_to_numpy(data.edge_attr),
         data.num_nodes, y=maybe_convert_to_numpy(data.y), max_k=max_ring_size,
         include_down_adj=include_down_adj, init_method=init_method,
         init_edges=init_edges, init_rings=init_rings) for data in dataset)
+    breakpoint()
 
     # NB: here we perform additional checks to verify the order of complexes
     # corresponds to that of input graphs after _parallel_ conversion

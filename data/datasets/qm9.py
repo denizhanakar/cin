@@ -98,6 +98,7 @@ class QM9Dataset(InMemoryComplexDataset):
             init_rings=False,
             n_jobs=self._n_jobs)
         data_list += test_complexes
+        breakpoint()
         idx.append(list(range(start, len(data_list))))
 
         path = self.processed_paths[0]
@@ -163,11 +164,11 @@ class CollapseDeleteQM9Features(object):
         # Get the indices at which it is non-zero (row, col), then just get col.
         # This is to convert from one-hot to scalar, keeping the dimensions ([node_num, 1] shape)
         # We, for now, delete the rest of the features.
-        # data.x = torch.cat((torch.nonzero(data.x[:, :5])[:, 1:2], data.x[:, 10:11]), 1)
+        # data.x = torch.nonzero(data.x[:, :5])[:, 1:2]
         data.x = torch.cat((torch.nonzero(data.x[:, :5])[:, 1:2], data.x[:, 5:]), 1)
 
-        # Edges are also one-hot, we convert to scalar, this time not keeping the dimensions ([edge_num] shape)
-        data.edge_attr = torch.nonzero(data.edge_attr[:, :])[:, 1]
-        # We actually keep the edge attribute as is.
+        # NON-COMMMENT: Edges are also one-hot, we convert to scalar, this time not keeping the dimensions ([edge_num] shape)
+        # COMMENT: We actually keep the edge attribute as is.
+        # data.edge_attr = torch.nonzero(data.edge_attr[:, :])[:, 1]
 
         return data

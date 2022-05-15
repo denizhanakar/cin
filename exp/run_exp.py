@@ -1,5 +1,5 @@
 import os
-# os.environ["CUDA_VISIBLE_DEVICES"] = "";# os.environ["PYTHONBREAKPOINT"] = "0" # IMPORTANT: SET CUDA AND BREAKPOINTS
+os.environ["CUDA_VISIBLE_DEVICES"] = "";# os.environ["PYTHONBREAKPOINT"] = "0" # IMPORTANT: SET CUDA AND BREAKPOINTS
 import numpy as np
 import copy
 import pickle
@@ -14,7 +14,7 @@ from exp.train_utils import train, eval, Evaluator
 from exp.parser import get_parser, validate_args
 from mp.graph_models import GIN0, GINWithJK
 from mp.models import CIN0, Dummy, SparseCIN, EdgeOrient, EdgeMPNN, MessagePassingAgnostic
-from mp.molec_models import EmbedSparseCIN, OGBEmbedSparseCIN, EmbedSparseCINNoRings, EmbedGIN, QM9_EmbedSparseCIN
+from mp.molec_models import EmbedSparseCIN, OGBEmbedSparseCIN, EmbedSparseCINNoRings, EmbedGIN, QM9EmbedSparseCIN
 from mp.ring_exp_models import RingSparseCIN, RingGIN
 
 
@@ -275,7 +275,7 @@ def main(args):
                                   readout_dims=readout_dims                # readout_dims
                                  ).to(device)
     elif args.model == 'qm9_embed_sparse_cin':
-        model = QM9_EmbedSparseCIN(1,                       # out_size
+        model = QM9EmbedSparseCIN(1,                                       # out_size
                                   args.num_layers,                         # num_layers
                                   args.emb_dim,                            # hidden
                                   dropout_rate=args.drop_rate,             # dropout_rate
