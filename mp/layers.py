@@ -224,7 +224,7 @@ class SparseCINCochainConv(CochainMessagePassing):
         up_x_j:
         up_pos_j:
         """
-        # breakpoint()
+        breakpoint()
         # WE CAN USE self.dim!
         if self.use_pos and self.dim == 0:
             return self.msg_up_nn((up_x_j, up_attr, torch.linalg.norm(up_pos_i - up_pos_j, dim=1).unsqueeze(1)))

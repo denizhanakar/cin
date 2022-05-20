@@ -176,7 +176,7 @@ def extract_labels(y, size):
 
 def generate_cochain(dim, x, all_upper_index, all_lower_index,
                    all_shared_boundaries, all_shared_coboundaries, cell_tables, boundaries_tables,
-                   complex_dim, y=None):
+                   complex_dim, y=None, pos=None):
     """Builds a Cochain given all the adjacency data extracted from the complex."""
     if dim == 0:
         assert len(all_lower_index[dim]) == 0
@@ -218,7 +218,7 @@ def generate_cochain(dim, x, all_upper_index, all_lower_index,
     return Cochain(dim=dim, x=x, upper_index=up_index,
                  lower_index=down_index, shared_coboundaries=shared_coboundaries,
                  shared_boundaries=shared_boundaries, y=y, num_cells_down=num_cells_down,
-                 num_cells_up=num_cells_up, boundary_index=boundary_index)
+                 num_cells_up=num_cells_up, boundary_index=boundary_index, pos=pos)
 
 
 def compute_clique_complex_with_gudhi(x: Tensor, edge_index: Adj, size: int,
@@ -466,7 +466,7 @@ def compute_ring_2complex(x: Union[Tensor, np.ndarray],
     shared_boundaries, shared_coboundaries, lower_idx, upper_idx = build_adj(boundaries, co_boundaries, id_maps,
                                                                    complex_dim, include_down_adj)
     
-    breakpoint()
+    # breakpoint()
     # Construct features for the higher dimensions
     xs = [x, None, None]
     constructed_features = construct_features(x, cell_tables, init_method)
@@ -505,8 +505,6 @@ def compute_ring_2complex(x: Union[Tensor, np.ndarray],
             assert xs[1].size(0) == len(id_maps[1])
             assert xs[1].size(1) == edge_attr.size(1)
     # breakpoint()
-    # No need here, since we can just add to end.
-    # xs[0] = torch.cat((xs[0], pos), 1)
 
     # Initialise the node / complex labels
     v_y, complex_y = extract_labels(y, size)
@@ -518,15 +516,13 @@ def compute_ring_2complex(x: Union[Tensor, np.ndarray],
         # upper_idx
         # lower_idx == [[], []]
         # breakpoint()
+        if i == 1:
+            pos = None
         cochain = generate_cochain(i, xs[i], upper_idx, lower_idx, shared_boundaries, shared_coboundaries,
-                               cell_tables, boundaries_tables, complex_dim=complex_dim, y=y)
+                               cell_tables, boundaries_tables, complex_dim=complex_dim, y=y, pos=pos)
         cochains.append(cochain)
 
-    # This is us associating `pos` with the complex; however, we don't actually
-    # have pos added to the 0-cochain. That happens at the _batch_ because I wanted
-    # to guarantee it would pop up in in the batch (as the pos associated with the
-    # complex did not.)
-    return Complex(*cochains, y=complex_y, pos=pos, dimension=complex_dim)
+    return Complex(*cochains, y=complex_y, dimension=complex_dim)
 
 
 def convert_graph_dataset_with_rings(dataset, max_ring_size=7, include_down_adj=False,

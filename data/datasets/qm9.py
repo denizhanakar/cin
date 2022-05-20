@@ -71,7 +71,7 @@ class QM9Dataset(InMemoryComplexDataset):
         idx = []
         start = 0
         print("Converting the train dataset to a cell complex...")
-        train_data = train_data[16:17]
+        train_data = train_data[15:17]
         train_complexes, _, _ = convert_graph_dataset_with_rings(
             train_data,
             max_ring_size=self._max_ring_size,

@@ -67,7 +67,7 @@ class Cochain(object):
         # Note, everything that is not of form __smth__ is made None during batching
         # So dim must be stored like this.
         self.__dim__ = dim
-        self.__position__ = pos
+        self.position = pos
         # TODO: check default for x
         self.__x = x
         self.upper_index = upper_index
@@ -108,7 +108,7 @@ class Cochain(object):
     @property
     def pos(self):
         """Returns the vector values (features) associated with the cells."""
-        return self.__position__
+        return self.position
 
     @x.setter
     def x(self, new_x):
@@ -270,8 +270,8 @@ class Cochain(object):
         # breakpoint()
         for key, item in self(*keys):
             self[key] = self.__apply__(item, func)
-        if self.__position__ is not None:
-            self.__position__  = self.__apply__(self.__position__, func)
+        # if self.__position__ is not None:
+        #     self.__position__  = self.__apply__(self.__position__, func)
         # breakpoint()
         return self
 
@@ -347,9 +347,9 @@ class CochainBatch(Cochain):
             if key[:2] != '__' and key[-2:] != '__':
                 batch[key] = None
         # breakpoint()
-        if data_list[0].__position__ is not None and "__position__" not in keys:
-            keys.append("__position__")
-            batch["__position__"] = None
+        # if data_list[0].__position__ is not None and "__position__" not in keys:
+        #     keys.append("__position__")
+        #     batch["__position__"] = None
 
         batch.__num_cochains__ = len(data_list)
         batch.__data_class__ = data_list[0].__class__
@@ -461,8 +461,8 @@ class CochainBatch(Cochain):
         ref_data = data_list[0]
 
         batch_key_list = batch.keys
-        if data_list[0].__position__ is not None:
-            batch_key_list.append("__position__")
+        # if data_list[0].__position__ is not None:
+        #     batch_key_list.append("__position__")
         for key in batch_key_list:
             # breakpoint()
             items = batch[key]
@@ -518,7 +518,6 @@ class Complex(object):
     def __init__(self,
                  *cochains: Cochain,
                  y: torch.Tensor = None,
-                 pos: torch.Tensor = None,
                  dimension: int = None):
         if len(cochains) == 0:
             raise ValueError('At least one cochain is required.')
@@ -533,8 +532,6 @@ class Complex(object):
         self.nodes = cochains[0]
         self.edges = cochains[1] if dimension >= 1 else None
         self.two_cells = cochains[2] if dimension >= 2 else None
-
-        self.pos = pos
 
         self.y = y
         
@@ -569,8 +566,6 @@ class Complex(object):
             self.cochains[dim] = self.cochains[dim].to(device, **kwargs)
         if self.y is not None:
             self.y = self.y.to(device, **kwargs)
-        if self.pos is not None:
-            self.pos = self.pos.to(device, **kwargs)
         return self
 
     def get_cochain_params(self,
@@ -608,8 +603,8 @@ class Complex(object):
                     upper_features = torch.index_select(self.cochains[dim + 1].x, 0,
                                                         self.cochains[dim].shared_coboundaries)
 
-            if cells.__position__ is not None and dim == 0:
-                position = cells.__position__
+            if cells.position is not None and dim == 0:
+                position = cells.position
             else:
                 position = None
 
@@ -753,8 +748,6 @@ class ComplexBatch(Complex):
                     # print("we're fine")
                     # breakpoint()
                     cochains[dim].append(comp.cochains[dim])
-                if hasattr(comp, "pos") and comp.pos is not None and dim == 0:
-                    cochains[dim][-1].__position__ = comp.pos
 
             per_complex_labels &= comp.y is not None
             if per_complex_labels:

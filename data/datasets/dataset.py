@@ -184,10 +184,7 @@ class InMemoryComplexDataset(ComplexDataset):
         
         dim = self.data['dims'][idx].item()
         assert dim == len(cochains) - 1
-        position = None
-        if "pos" in self.data:
-            position = self.data["pos"][start]
-        data = Complex(*cochains, y=target, pos=position)
+        data = Complex(*cochains, y=target)
     
         if hasattr(self, '__data_list__'):
             self.__data_list__[idx] = copy.copy(data)
@@ -267,7 +264,7 @@ class InMemoryComplexDataset(ComplexDataset):
         types = {}
         cat_dims = {}
         tensor_dims = {}
-        data = {'labels': [], 'dims': [], 'pos': []}
+        data = {'labels': [], 'dims': []}
         slices = {}
         for dim in range(0, max_dim + 1):
             data[dim], slices[dim] = init_keys(dim, keys)
@@ -330,9 +327,6 @@ class InMemoryComplexDataset(ComplexDataset):
             if isinstance(complex.y, Tensor):
                 assert complex.y.size(0) == 1   
             data['labels'].append(complex.y)
-            if not hasattr(complex, 'pos'):
-                complex.pos = None
-            data['pos'].append(complex.pos)
             data['dims'].append(complex.dimension)
 
         # Pack lists into tensors
@@ -367,7 +361,6 @@ class InMemoryComplexDataset(ComplexDataset):
         elif isinstance(item, int) or isinstance(item, float):
             data['labels'] = torch.tensor(data['labels'])
         # breakpoint()
-        # data['pos'] = torch.stack(data['pos'], 0)
         data['dims'] = torch.tensor(data['dims'])
         
         return data, slices
