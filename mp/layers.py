@@ -2,6 +2,7 @@ import torch
 
 from typing import Callable, Optional
 from torch import Tensor
+from zmq import device
 from mp.cell_mp import CochainMessagePassing, CochainMessagePassingParams
 from torch_geometric.nn.inits import reset
 from torch.nn import Linear, Sequential, BatchNorm1d as BN, Identity
@@ -163,10 +164,12 @@ class SparseCINCochainConv(CochainMessagePassing):
                  update_boundaries_nn: Callable,
                  combine_nn: Callable,
                  eps: float = 0.,
-                 train_eps: bool = False):
+                 train_eps: bool = False,
+                 use_pos: bool = False):
         super(SparseCINCochainConv, self).__init__(up_msg_size, down_msg_size, boundary_msg_size=boundary_msg_size,
                                                  use_down_msg=False)
         self.dim = dim
+        self.use_pos = use_pos
         self.msg_up_nn = msg_up_nn
         self.msg_boundaries_nn = msg_boundaries_nn
         self.update_up_nn = update_up_nn
@@ -181,13 +184,14 @@ class SparseCINCochainConv(CochainMessagePassing):
             self.register_buffer('eps2', torch.Tensor([eps]))
         self.reset_parameters()
 
-    def forward(self, cochain: CochainMessagePassingParams):
+    def forward(self, cochain: CochainMessagePassingParams, pos=False):
         """
         The paper specifies (1+\epsilon) and also a sum across all \tau from the boundary of \sigma.
         We first get the boundary via self.propagate(?)
         Then we add cochain.x to out_up, an up message output.
         We finally combine both into an NN and return.
         """
+        # breakpoint()
         out_up, _, out_boundaries = self.propagate(cochain.up_index, cochain.down_index,
                                               cochain.boundary_index, x=cochain.x,
                                               pos=cochain.pos,
@@ -215,10 +219,21 @@ class SparseCINCochainConv(CochainMessagePassing):
         self.eps1.data.fill_(self.initial_eps)
         self.eps2.data.fill_(self.initial_eps)
 
-    def message_up(self, up_x_j: Tensor, up_attr: Tensor) -> Tensor:
-        return self.msg_up_nn((up_x_j, up_attr))
+    def message_up(self, up_x_j: Tensor, up_pos_j: Tensor, up_pos_i: Tensor, up_attr: Tensor) -> Tensor:
+        """
+        up_x_j:
+        up_pos_j:
+        """
+        # breakpoint()
+        # WE CAN USE self.dim!
+        if self.use_pos and self.dim == 0:
+            return self.msg_up_nn((up_x_j, up_attr, torch.linalg.norm(up_pos_i - up_pos_j, dim=1).unsqueeze(1)))
+            # return self.msg_up_nn((up_x_j, up_attr, torch.zeros(up_x_j.shape[0], 1).to(device=up_x_j.device)))
+        else:
+            return self.msg_up_nn((up_x_j, up_attr))
     
     def message_boundary(self, boundary_x_j: Tensor) -> Tensor:
+        # breakpoint()
         return self.msg_boundaries_nn(boundary_x_j)
     
 
@@ -227,6 +242,7 @@ class Catter(torch.nn.Module):
         super(Catter, self).__init__()
 
     def forward(self, x):
+        # breakpoint()
         return torch.cat(x, dim=-1)
     
     
@@ -241,7 +257,7 @@ class SparseCINConv(torch.nn.Module):
                  passed_update_up_nn: Optional[Callable],
                  passed_update_boundaries_nn: Optional[Callable],
                  eps: float = 0., train_eps: bool = False, max_dim: int = 2,
-                 graph_norm=BN, use_coboundaries=False, **kwargs):
+                 graph_norm=BN, use_coboundaries=False, use_pos=False, **kwargs):
         super(SparseCINConv, self).__init__()
         self.max_dim = max_dim
         self.mp_levels = torch.nn.ModuleList()
@@ -249,10 +265,16 @@ class SparseCINConv(torch.nn.Module):
             msg_up_nn = passed_msg_up_nn
             if msg_up_nn is None:
                 if use_coboundaries:
-                    msg_up_nn = Sequential(
-                            Catter(),
-                            Linear(kwargs['layer_dim'] * 2, kwargs['layer_dim']),
-                            kwargs['act_module']())
+                    if use_pos and dim == 0:
+                        msg_up_nn = Sequential(
+                                Catter(),
+                                Linear(kwargs['layer_dim'] * 2 + 1, kwargs['layer_dim']),
+                                kwargs['act_module']())
+                    else:
+                        msg_up_nn = Sequential(
+                                Catter(),
+                                Linear(kwargs['layer_dim'] * 2, kwargs['layer_dim']),
+                                kwargs['act_module']())
                 else:
                     msg_up_nn = lambda xs: xs[0]
 
@@ -289,7 +311,7 @@ class SparseCINConv(torch.nn.Module):
             mp = SparseCINCochainConv(dim, up_msg_size, down_msg_size, boundary_msg_size=boundary_msg_size,
                 msg_up_nn=msg_up_nn, msg_boundaries_nn=msg_boundaries_nn, update_up_nn=update_up_nn,
                 update_boundaries_nn=update_boundaries_nn, combine_nn=combine_nn, eps=eps,
-                train_eps=train_eps)
+                train_eps=train_eps, use_pos=use_pos)
             self.mp_levels.append(mp)
 
     def forward(self, *cochain_params: CochainMessagePassingParams, start_to_process=0):
