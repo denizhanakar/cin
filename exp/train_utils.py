@@ -34,6 +34,7 @@ def train(model, device, loader, optimizer, task_type='classification', ignore_u
     num_skips = 0
     for step, batch in enumerate(tqdm(loader, desc="Training iteration")):
         batch = batch.to(device)
+        # breakpoint()
         if isinstance(batch, ComplexBatch):
             num_samples = batch.cochains[0].x.size(0)
             for dim in range(1, batch.dimension+1):
@@ -55,6 +56,7 @@ def train(model, device, loader, optimizer, task_type='classification', ignore_u
                             "with only {} samples".format(num_samples))
 
         optimizer.zero_grad()
+        # breakpoint()
         pred = model(batch)
         if isinstance(loss_fn, torch.nn.CrossEntropyLoss):
             targets = batch.y.view(-1,)

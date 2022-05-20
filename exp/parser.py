@@ -112,6 +112,7 @@ def get_parser():
     parser.add_argument('--preproc_jobs',  type=int, default=2,
                         help='Jobs to use for the dataset preprocessing. For all jobs use "-1".'
                              'For sequential processing (no parallelism) use "1"')
+    parser.add_argument('--use_pos', action='store_true', help='Use spacial arguments.')
     return parser
 
 

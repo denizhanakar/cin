@@ -289,7 +289,8 @@ def main(args):
                                   use_coboundaries=use_coboundaries,       # whether to use coboundaries
                                   embed_edge=args.use_edge_features,       # whether to use edge feats
                                   graph_norm=args.graph_norm,              # normalization layer
-                                  readout_dims=readout_dims                # readout_dims
+                                  readout_dims=readout_dims,               # readout_dims
+                                  use_pos=args.use_pos                     # use positional parameters
                                  ).to(device)
     else:
         raise ValueError('Invalid model type {}.'.format(args.model))

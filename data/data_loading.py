@@ -54,6 +54,7 @@ class Collater(object):
 
     def collate(self, batch):
         """Converts a data list in the right storage format."""
+        # breakpoint()
         elem = batch[0]
         if isinstance(elem, Cochain):
             return CochainBatch.from_cochain_list(batch, self.follow_batch)
@@ -160,11 +161,14 @@ def load_dataset(name, root=os.path.join(ROOT_DIR, 'datasets'), max_dim=2, fold=
     elif name == 'ZINC':
         dataset = ZincDataset(os.path.join(root, name), max_ring_size=kwargs['max_ring_size'],
                               use_edge_features=kwargs['use_edge_features'], n_jobs=n_jobs)
+    elif name == 'ZINC-FULL':
+        dataset = ZincDataset(os.path.join(root, name), subset=False, max_ring_size=kwargs['max_ring_size'],
+                              use_edge_features=kwargs['use_edge_features'], n_jobs=n_jobs)
     elif name == 'QM9':
         dataset = QM9Dataset(os.path.join(root, name), max_ring_size=kwargs['max_ring_size'],
                               use_edge_features=kwargs['use_edge_features'], n_jobs=n_jobs)
-    elif name == 'ZINC-FULL':
-        dataset = ZincDataset(os.path.join(root, name), subset=False, max_ring_size=kwargs['max_ring_size'],
+    elif name == 'QM9-FULL':
+        dataset = QM9Dataset(os.path.join(root, name), subset=False, max_ring_size=kwargs['max_ring_size'],
                               use_edge_features=kwargs['use_edge_features'], n_jobs=n_jobs)
     elif name == 'CSL':
         dataset = CSLDataset(os.path.join(root, name), max_ring_size=kwargs['max_ring_size'],

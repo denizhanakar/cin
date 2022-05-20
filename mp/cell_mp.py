@@ -128,6 +128,8 @@ class CochainMessagePassing(torch.nn.Module):
 
         # Return the parameter name for these functions minus those specified in special_args
         # TODO(Cris): Split user args by type of adjacency to make sure no bugs are introduced.
+        # breakpoint()
+        # self.__user_args__ = self.inspector.keys(['message_up', 'message_down', 'message_boundary', 'aggregate_up','aggregate_down', 'aggregate_boundary']).difference(self.special_args)
         self.__user_args__ = self.inspector.keys(
             ['message_up', 'message_down', 'message_boundary', 'aggregate_up',
              'aggregate_down', 'aggregate_boundary']).difference(self.special_args)
@@ -220,6 +222,7 @@ class CochainMessagePassing(torch.nn.Module):
                 dim = 0 if arg[-2:] == '_j' else 1
                 # Extract any part up to _j or _i. So for x_j extract x
                 if adjacency == 'up' and arg.startswith('up_'):
+                    # breakpoint()
                     data = kwargs.get(arg[3:-2], Parameter.empty)
                     size_data = data
                 elif adjacency == 'down' and arg.startswith('down_'):
@@ -245,6 +248,7 @@ class CochainMessagePassing(torch.nn.Module):
 
                 # This is the usual case when we get a feature matrix of shape [N, in_channels]
                 if isinstance(data, Tensor):
+                    # breakpoint()
                     # Same size checks as above.
                     self.__set_size__(size, dim, size_data)
                     # Select the features of the nodes indexed by i or j from the data matrix
@@ -254,6 +258,7 @@ class CochainMessagePassing(torch.nn.Module):
 
         # Automatically builds some default parameters that can be used in the message passing
         # functions as needed. This was modified to be discriminative of upper and lower adjacency.
+        # breakpoint()
         if isinstance(index, Tensor):
             out[f'{adjacency}_adj_t'] = None
             out[f'{adjacency}_ptr'] = None
@@ -326,6 +331,7 @@ class CochainMessagePassing(torch.nn.Module):
                                   size: List[Optional[int]] = None,
                                   **kwargs):
         assert adjacency in ['up', 'down', 'boundary']
+        # breakpoint()
 
         # Fused message and aggregation
         fuse = self.get_fuse_boolean(adjacency)
@@ -350,8 +356,9 @@ class CochainMessagePassing(torch.nn.Module):
             # Get the function for the relevant adjacency.
             message = self.get_msg_func(adjacency)
             out = message(**msg_kwargs)
+            breakpoint()
             
-            import pdb; pdb.set_trace()
+            # breakpoint()
             aggr_kwargs = self.inspector.distribute(f'aggregate_{adjacency}', coll_dict)
             aggregate = self.get_agg_func(adjacency)
             return aggregate(out, **aggr_kwargs)
@@ -538,8 +545,9 @@ class CochainMessagePassingParams:
         up_index: The index for the upper adjacencies of the cochain.
         down_index: The index for the lower adjacencies of the cochain.
     """
-    def __init__(self, x: Tensor, up_index: Adj = None, down_index: Adj = None, **kwargs):
+    def __init__(self, x: Tensor, up_index: Adj = None, down_index: Adj = None, pos=None, **kwargs):
         self.x = x
+        self.pos = pos
         self.up_index = up_index
         self.down_index = down_index
         self.kwargs = kwargs

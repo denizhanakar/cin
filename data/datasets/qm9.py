@@ -4,6 +4,8 @@ import os.path as osp
 from data.utils import convert_graph_dataset_with_rings
 from data.datasets import InMemoryComplexDataset
 from torch_geometric.datasets import QM9
+import torch_geometric.transforms as transforms
+from torch_geometric.utils import remove_self_loops, to_dense_adj, dense_to_sparse
 
 
 class QM9Dataset(InMemoryComplexDataset):
@@ -52,6 +54,7 @@ class QM9Dataset(InMemoryComplexDataset):
         print(f"Processing cell complex dataset for {self.name}")
 
         print("Modify QM9 such that one-hot-encoding becomes scalar and delete other features for now")
+        # transform = transforms.Compose([CompleteGraph(), CollapseDeleteQM9Features()])
         transform = CollapseDeleteQM9Features()
         # transform = None
         
@@ -60,14 +63,15 @@ class QM9Dataset(InMemoryComplexDataset):
             val_data = QM9(self.raw_dir, transform=transform)[1000:2000]
             test_data = QM9(self.raw_dir, transform=transform)[2000:3000]
         else:
-            train_data = QM9(self.raw_dir, transform=transform)[:10000]
-            val_data = QM9(self.raw_dir, transform=transform)[10000:20000]
-            test_data = QM9(self.raw_dir, transform=transform)[20000:]
+            train_data = QM9(self.raw_dir, transform=transform)[:100000]
+            val_data = QM9(self.raw_dir, transform=transform)[100000:118000]
+            test_data = QM9(self.raw_dir, transform=transform)[118000:]
 
         data_list = []
         idx = []
         start = 0
         print("Converting the train dataset to a cell complex...")
+        train_data = train_data[16:17]
         train_complexes, _, _ = convert_graph_dataset_with_rings(
             train_data,
             max_ring_size=self._max_ring_size,
@@ -98,13 +102,13 @@ class QM9Dataset(InMemoryComplexDataset):
             init_rings=False,
             n_jobs=self._n_jobs)
         data_list += test_complexes
-        breakpoint()
+        # breakpoint()
         idx.append(list(range(start, len(data_list))))
 
         path = self.processed_paths[0]
         print(f'Saving processed dataset in {path}....')
         torch.save(self.collate(data_list, 2), path)
-        
+        # breakpoint()
         path = self.processed_paths[1]
         print(f'Saving idx in {path}....')
         torch.save(idx, path)
@@ -166,9 +170,45 @@ class CollapseDeleteQM9Features(object):
         # We, for now, delete the rest of the features.
         # data.x = torch.nonzero(data.x[:, :5])[:, 1:2]
         data.x = torch.cat((torch.nonzero(data.x[:, :5])[:, 1:2], data.x[:, 5:]), 1)
+        # data.x = torch.cat((data.x, data.pos), 1)
 
         # NON-COMMMENT: Edges are also one-hot, we convert to scalar, this time not keeping the dimensions ([edge_num] shape)
         # COMMENT: We actually keep the edge attribute as is.
         # data.edge_attr = torch.nonzero(data.edge_attr[:, :])[:, 1]
+
+        return data
+
+class CompleteGraph(object):
+    """
+    This transform adds all pairwise edges into the edge index per data sample, 
+    then removes self loops, i.e. it builds a fully connected or complete graph
+    """
+    def __call__(self, data):
+        device = data.edge_index.device
+
+        row = torch.arange(data.num_nodes, dtype=torch.long, device=device)
+        col = torch.arange(data.num_nodes, dtype=torch.long, device=device)
+
+        row = row.view(-1, 1).repeat(1, data.num_nodes).view(-1)
+        col = col.repeat(data.num_nodes)
+        edge_index = torch.stack([row, col], dim=0)
+
+        edge_attr = None
+        # Connect every node with every node including itself: new_edge_count = data.num_nodes * data.num_nodes
+        # Remove self-loops: new_edge_count = new_edge_count - data.num_nodes
+        # data.edge_index: [2, data.num_edges] -> [2, new_edge_count]
+        # data.edge_attr: [data.num_edges, num_edge_feats] - > [new_edge_count, num_edge_feats]
+        if data.edge_attr is not None:
+            # Why do we do this?
+            idx = data.edge_index[0] * data.num_nodes + data.edge_index[1]
+            size = list(data.edge_attr.size())
+            size[0] = data.num_nodes * data.num_nodes
+            edge_attr = data.edge_attr.new_zeros(size)
+            # Assign the existing data.edge_attr to the edges we know to exist.
+            edge_attr[idx] = data.edge_attr
+
+        edge_index, edge_attr = remove_self_loops(edge_index, edge_attr)
+        data.edge_attr = edge_attr
+        data.edge_index = edge_index
 
         return data
