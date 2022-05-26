@@ -1,6 +1,6 @@
 import torch
 
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 from torch import Tensor
 from zmq import device
 from mp.cell_mp import CochainMessagePassing, CochainMessagePassingParams
@@ -10,6 +10,9 @@ from data.complex import Cochain
 from torch_scatter import scatter
 from ogb.graphproppred.mol_encoder import AtomEncoder, BondEncoder
 from abc import ABC, abstractmethod
+
+from torch_scatter import gather_csr, scatter, segment_csr
+from torch_geometric.nn.conv.utils.helpers import expand_left
 
 
 class DummyCochainMessagePassing(CochainMessagePassing):
@@ -195,9 +198,10 @@ class SparseCINCochainConv(CochainMessagePassing):
         out_up, _, out_boundaries = self.propagate(cochain.up_index, cochain.down_index,
                                               cochain.boundary_index, x=cochain.x,
                                               pos=cochain.pos,
+                                              complete_graph_index=cochain.complete_graph_index,
+                                            #   full_x_edges=cochain.full_x_edges,
                                               up_attr=cochain.kwargs['up_attr'],
                                               boundary_attr=cochain.kwargs['boundary_attr'])
-
         # As in GIN, we can learn an injective update function for each multi-set
         # Add 
         out_up += (1 + self.eps1) * cochain.x
@@ -224,10 +228,11 @@ class SparseCINCochainConv(CochainMessagePassing):
         up_x_j:
         up_pos_j:
         """
-        breakpoint()
+        # breakpoint()
         # WE CAN USE self.dim!
         if self.use_pos and self.dim == 0:
-            return self.msg_up_nn((up_x_j, up_attr, torch.linalg.norm(up_pos_i - up_pos_j, dim=1).unsqueeze(1)))
+            distances = torch.linalg.norm(up_pos_i - up_pos_j, dim=1).unsqueeze(1)
+            return self.msg_up_nn((up_x_j, up_attr, distances))
             # return self.msg_up_nn((up_x_j, up_attr, torch.zeros(up_x_j.shape[0], 1).to(device=up_x_j.device)))
         else:
             return self.msg_up_nn((up_x_j, up_attr))
@@ -235,7 +240,140 @@ class SparseCINCochainConv(CochainMessagePassing):
     def message_boundary(self, boundary_x_j: Tensor) -> Tensor:
         # breakpoint()
         return self.msg_boundaries_nn(boundary_x_j)
+
+
+class SparseEquivCINCochainConv(CochainMessagePassing):
+    """This is a CIN Cochain layer that operates of boundaries and upper adjacent cells."""
+    def __init__(self, dim: int,
+                 up_msg_size: int,
+                 down_msg_size: int,
+                 boundary_msg_size: Optional[int],
+                 msg_up_nn: Callable,
+                 msg_boundaries_nn: Callable,
+                 update_up_nn: Callable,
+                 update_boundaries_nn: Callable,
+                 combine_nn: Callable,
+                 eps: float = 0.,
+                 train_eps: bool = False):
+        super(SparseEquivCINCochainConv, self).__init__(up_msg_size, down_msg_size, boundary_msg_size=boundary_msg_size,
+                                                 use_down_msg=False)
+        self.dim = dim
+        self.mlp_wght = Linear(up_msg_size, 1)
+        self.msg_up_nn = msg_up_nn
+        self.msg_boundaries_nn = msg_boundaries_nn
+        self.update_up_nn = update_up_nn
+        self.update_boundaries_nn = update_boundaries_nn
+        self.combine_nn = combine_nn
+        self.initial_eps = eps
+        if train_eps:
+            self.eps1 = torch.nn.Parameter(torch.Tensor([eps]))
+            self.eps2 = torch.nn.Parameter(torch.Tensor([eps]))
+        else:
+            self.register_buffer('eps1', torch.Tensor([eps]))
+            self.register_buffer('eps2', torch.Tensor([eps]))
+
+        # Store weights for each relative position.
+        self.weights = None
+        # Store weighted sum of all relative positions.
+        self.weighted_relative_pos = None
+
+        self.reset_parameters()
+
+    def forward(self, cochain: CochainMessagePassingParams, pos=False):
+        """
+        The paper specifies (1+\epsilon) and also a sum across all \tau from the boundary of \sigma.
+        We first get the boundary via self.propagate(?)
+        Then we add cochain.x to out_up, an up message output.
+        We finally combine both into an NN and return.
+        """
+        # breakpoint()
+        out_up, _, out_boundaries, pos_out = self.propagate(cochain.up_index, cochain.down_index,
+                                              cochain.boundary_index, x=cochain.x,
+                                              pos=cochain.pos,
+                                              complete_graph_index=cochain.complete_graph_index,
+                                            #   full_x_edges=cochain.full_x_edges,
+                                              up_attr=cochain.kwargs['up_attr'],
+                                              boundary_attr=cochain.kwargs['boundary_attr'])
+        # As in GIN, we can learn an injective update function for each multi-set
+        # Add 
+        out_up += (1 + self.eps1) * cochain.x
+        out_boundaries += (1 + self.eps2) * cochain.x
+        out_up = self.update_up_nn(out_up)
+        out_boundaries = self.update_boundaries_nn(out_boundaries)
+
+        # We need to combine the two such that the output is injective
+        # Because the cross product of countable spaces is countable, then such a function exists.
+        # And we can learn it with another MLP.
+        return self.combine_nn(torch.cat([out_up, out_boundaries], dim=-1))
+
+    def reset_parameters(self):
+        reset(self.msg_up_nn)
+        reset(self.msg_boundaries_nn)
+        reset(self.update_up_nn)
+        reset(self.update_boundaries_nn)
+        reset(self.combine_nn)
+        self.eps1.data.fill_(self.initial_eps)
+        self.eps2.data.fill_(self.initial_eps)
+
+    def message_up(self, up_x_j: Tensor, up_pos_j: Tensor, up_pos_i: Tensor, up_attr: Tensor) -> Tensor:
+        """
+        up_x_j:
+        up_pos_j:
+        """
+        # breakpoint()
+        # WE CAN USE self.dim!
+        if self.dim == 0:
+            distances = torch.linalg.norm(up_pos_i - up_pos_j, dim=1).unsqueeze(1)
+            messages = self.msg_up_nn((up_x_j, up_attr, distances))
+            self.weights = self.mlp_wght(messages)
+            return messages
+            # return self.msg_up_nn((up_x_j, up_attr, torch.zeros(up_x_j.shape[0], 1).to(device=up_x_j.device)))
+        else:
+            return self.msg_up_nn((up_x_j, up_attr))
+
+    def aggregate_up(self, inputs: Tensor, agg_up_index: Tensor,
+                     up_pos_j: Tensor, up_pos_i: Tensor,
+                     up_ptr: Optional[Tensor] = None,
+                     up_dim_size: Optional[int] = None) -> Tensor:
+        r"""Aggregates messages from upper adjacent cells.
+
+        Takes in the output of message computation as first argument and any
+        argument which was initially passed to :meth:`propagate`.
+
+        By default, this function will delegate its call to scatter functions
+        that support "add", "mean" and "max" operations as specified in
+        :meth:`__init__` by the :obj:`aggr` argument.
+        """
+        self.weighted_relative_pos = scatter((up_pos_i - up_pos_j) * self.weights, agg_up_index, dim=self.node_dim, reduce="mean")
+        if up_ptr is not None:
+            up_ptr = expand_left(up_ptr, dim=self.node_dim, dims=inputs.dim())
+            return segment_csr(inputs, up_ptr, reduce=self.aggr_up)
+        else:
+            return scatter(inputs, agg_up_index, dim=self.node_dim, dim_size=up_dim_size,
+                           reduce=self.aggr_up)
     
+    def message_boundary(self, boundary_x_j: Tensor) -> Tensor:
+        # breakpoint()
+        return self.msg_boundaries_nn(boundary_x_j)
+
+    def update(self, up_inputs: Optional[Tensor], down_inputs: Optional[Tensor],
+               boundary_inputs: Optional[Tensor], x: Tensor, pos: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
+        r"""Updates cell embeddings. Takes in the output of the aggregations from different
+        adjacencies as the first three arguments and any argument which was initially passed to
+        :meth:`propagate`.
+        """
+        # breakpoint()
+        if up_inputs is None:
+            up_inputs = torch.zeros(x.size(0), self.up_msg_size).to(device=x.device)
+        if down_inputs is None:
+            down_inputs = torch.zeros(x.size(0), self.down_msg_size).to(device=x.device)
+        if boundary_inputs is None:
+            boundary_inputs = torch.zeros(x.size(0), self.boundary_msg_size).to(device=x.device)
+
+        pos_out = pos + self.weighted_relative_pos
+
+        return up_inputs, down_inputs, boundary_inputs, pos_out
+
 
 class Catter(torch.nn.Module):
     def __init__(self):
@@ -246,8 +384,96 @@ class Catter(torch.nn.Module):
         return torch.cat(x, dim=-1)
     
     
+class SparseEquivCINConv(torch.nn.Module):
+    """A cellular version of GIN which performs message passing from cellular upper
+    neighbors and boundaries, but not from lower neighbors (hence why "Sparse")
+    """
+
+    # TODO: Refactor the way we pass networks externally to allow for different networks per dim.
+    # This?
+    def __init__(self, up_msg_size: int, down_msg_size: int, boundary_msg_size: Optional[int],
+                 passed_msg_up_nn: Optional[Callable], passed_msg_boundaries_nn: Optional[Callable],
+                 passed_update_up_nn: Optional[Callable],
+                 passed_update_boundaries_nn: Optional[Callable],
+                 eps: float = 0., train_eps: bool = False, max_dim: int = 2,
+                 graph_norm=BN, use_coboundaries=False, **kwargs):
+        super(SparseEquivCINConv, self).__init__()
+        self.max_dim = max_dim
+        self.mp_levels = torch.nn.ModuleList()
+        for dim in range(max_dim+1):
+            msg_up_nn = passed_msg_up_nn
+            if msg_up_nn is None:
+                if use_coboundaries:
+                    if dim == 0:
+                        # breakpoint()
+                        msg_up_nn = Sequential(
+                                Catter(),
+                                Linear(kwargs['layer_dim'] * 2 + 1, kwargs['layer_dim']),
+                                kwargs['act_module']())
+                    else:
+                        msg_up_nn = Sequential(
+                                Catter(),
+                                Linear(kwargs['layer_dim'] * 2, kwargs['layer_dim']),
+                                kwargs['act_module']())
+                else:
+                    msg_up_nn = lambda xs: xs[0]
+
+            msg_boundaries_nn = passed_msg_boundaries_nn
+            if msg_boundaries_nn is None:
+                msg_boundaries_nn = lambda x: x
+
+            update_up_nn = passed_update_up_nn
+            if update_up_nn is None:
+                update_up_nn = Sequential(
+                    Linear(kwargs['layer_dim'], kwargs['hidden']),
+                    graph_norm(kwargs['hidden']),
+                    kwargs['act_module'](),
+                    Linear(kwargs['hidden'], kwargs['hidden']),
+                    graph_norm(kwargs['hidden']),
+                    kwargs['act_module']()
+                )
+
+            update_boundaries_nn = passed_update_boundaries_nn
+            if update_boundaries_nn is None:
+                update_boundaries_nn = Sequential(
+                    Linear(kwargs['layer_dim'], kwargs['hidden']),
+                    graph_norm(kwargs['hidden']),
+                    kwargs['act_module'](),
+                    Linear(kwargs['hidden'], kwargs['hidden']),
+                    graph_norm(kwargs['hidden']),
+                    kwargs['act_module']()
+                )
+            combine_nn = Sequential(
+                Linear(kwargs['hidden']*2, kwargs['hidden']),
+                graph_norm(kwargs['hidden']),
+                kwargs['act_module']())
+
+            if dim == 0:
+                mp = SparseEquivCINCochainConv(dim, up_msg_size, down_msg_size, boundary_msg_size=boundary_msg_size,
+                    msg_up_nn=msg_up_nn, msg_boundaries_nn=msg_boundaries_nn, update_up_nn=update_up_nn,
+                    update_boundaries_nn=update_boundaries_nn, combine_nn=combine_nn, eps=eps,
+                    train_eps=train_eps)
+            else:
+                mp = SparseCINCochainConv(dim, up_msg_size, down_msg_size, boundary_msg_size=boundary_msg_size,
+                    msg_up_nn=msg_up_nn, msg_boundaries_nn=msg_boundaries_nn, update_up_nn=update_up_nn,
+                    update_boundaries_nn=update_boundaries_nn, combine_nn=combine_nn, eps=eps,
+                    train_eps=train_eps)
+            self.mp_levels.append(mp)
+
+    def forward(self, *cochain_params: CochainMessagePassingParams, start_to_process=0):
+        assert len(cochain_params) <= self.max_dim+1
+
+        out = []
+        for dim in range(len(cochain_params)):
+            if dim < start_to_process:
+                out.append(cochain_params[dim].x)
+            else:
+                out.append(self.mp_levels[dim].forward(cochain_params[dim]))
+        return out
+
+
 class SparseCINConv(torch.nn.Module):
-    """A cellular version of GIN which performs message passing from  cellular upper
+    """A cellular version of GIN which performs message passing from cellular upper
     neighbors and boundaries, but not from lower neighbors (hence why "Sparse")
     """
 

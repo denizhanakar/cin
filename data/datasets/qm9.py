@@ -7,6 +7,12 @@ from torch_geometric.datasets import QM9
 import torch_geometric.transforms as transforms
 from torch_geometric.utils import remove_self_loops, to_dense_adj, dense_to_sparse
 
+from os.path import join as join
+import urllib
+from data.datasets.prepare.process import process_xyz_files, process_xyz_gdb9
+from data.datasets.prepare.utils import download_data, is_int, cleanup_file
+import numpy as np
+
 
 class QM9Dataset(InMemoryComplexDataset):
     """This is QM9 from the ---- paper. This is a graph regression task."""
@@ -57,21 +63,45 @@ class QM9Dataset(InMemoryComplexDataset):
         # transform = transforms.Compose([CompleteGraph(), CollapseDeleteQM9Features()])
         transform = CollapseDeleteQM9Features()
         # transform = None
+
+        # Normalize targets per data sample to mean = 0 and std = 1.
+        target = 0
+        dataset = QM9(self.raw_dir, transform=transform)
+        mean = dataset.data.y.mean(dim=0, keepdim=True)
+        std = dataset.data.y.std(dim=0, keepdim=True)
+        dataset.data.y = (dataset.data.y - mean) / std
+        # Get the old mean and std of our target dipole moments.
+        mean, std = mean[:, target].item(), std[:, target].item()
         
         if self._subset:
-            train_data = QM9(self.raw_dir, transform=transform)[:1000]
-            val_data = QM9(self.raw_dir, transform=transform)[1000:2000]
-            test_data = QM9(self.raw_dir, transform=transform)[2000:3000]
+            perm = torch.randperm(len(dataset))
+            train_slice = perm[:1000]
+            val_slice = perm[1000:2000]
+            test_slice = perm[2000:3000]
+
+            train_data = dataset[train_slice]
+            val_data = dataset[val_slice]
+            test_data = dataset[test_slice]
         else:
-            train_data = QM9(self.raw_dir, transform=transform)[:100000]
-            val_data = QM9(self.raw_dir, transform=transform)[100000:118000]
-            test_data = QM9(self.raw_dir, transform=transform)[118000:]
+            # print('Beginning download of GDB9 dataset!')
+            # gdb9_url_data = 'https://springernature.figshare.com/ndownloader/files/3195389'
+            # gdb9_tar_data = join(".", 'dsgdb9nsd.xyz.tar.bz2')
+            # urllib.request.urlretrieve(gdb9_url_data, filename=gdb9_tar_data)
+            # print('GDB9 dataset downloaded successfully!')
+            # splits = gen_splits_gdb9(".")
+            # breakpoint()
+            train_data = dataset[perm[:100000]]
+            val_data = dataset[perm[100000:118000]]
+            test_data = dataset[perm[118000:]]
 
         data_list = []
         idx = []
         start = 0
         print("Converting the train dataset to a cell complex...")
-        train_data = train_data[15:17]
+        # breakpoint()
+        # train_data = train_data[16:18]
+        # val_data = val_data[16:18]
+        # test_data = test_data[16:18]
         train_complexes, _, _ = convert_graph_dataset_with_rings(
             train_data,
             max_ring_size=self._max_ring_size,
@@ -207,8 +237,87 @@ class CompleteGraph(object):
             # Assign the existing data.edge_attr to the edges we know to exist.
             edge_attr[idx] = data.edge_attr
 
+        # breakpoint()
+        # data.old_edge_index = data.edge_index
+        # data.old_edge_attr = data.edge_attr
+        # edge_index, edge_attr = remove_self_loops(edge_index, edge_attr)
+        # data.edge_attr = edge_attr
+        # data.edge_index = edge_index
+        
+        # [!] DELETE
+        # Figure out how to play with indexing.
         edge_index, edge_attr = remove_self_loops(edge_index, edge_attr)
-        data.edge_attr = edge_attr
-        data.edge_index = edge_index
+        data.new_edge_index = edge_index
+        data.new_edge_attr = edge_attr
 
         return data
+
+def gen_splits_gdb9(gdb9dir, cleanup=True):
+    """
+    Generate GDB9 training/validation/test splits used.
+
+    First, use the file 'uncharacterized.txt' in the GDB9 figshare to find a
+    list of excluded molecules.
+
+    Second, create a list of molecule ids, and remove the excluded molecule
+    indices.
+
+    Third, assign 100k molecules to the training set, 10% to the test set,
+    and the remaining to the validation set.
+
+    Finally, generate torch.tensors which give the molecule ids for each
+    set.
+    """
+    gdb9_url_excluded = 'https://springernature.figshare.com/ndownloader/files/3195404'
+    gdb9_txt_excluded = join(gdb9dir, 'uncharacterized.txt')
+    urllib.request.urlretrieve(gdb9_url_excluded, filename=gdb9_txt_excluded)
+
+    # First get list of excluded indices
+    excluded_strings = []
+    with open(gdb9_txt_excluded) as f:
+        lines = f.readlines()
+        excluded_strings = [line.split()[0]
+                            for line in lines if len(line.split()) > 0]
+
+    excluded_idxs = [int(idx) - 1 for idx in excluded_strings if is_int(idx)]
+
+    assert len(excluded_idxs) == 3054, 'There should be exactly 3054 excluded atoms. Found {}'.format(
+        len(excluded_idxs))
+
+    # Now, create a list of indices
+    Ngdb9 = 133885
+    Nexcluded = 3054
+
+    included_idxs = np.array(
+        sorted(list(set(range(Ngdb9)) - set(excluded_idxs))))
+
+    # Now generate random permutations to assign molecules to training/validation/test sets.
+    Nmols = Ngdb9 - Nexcluded
+
+    Ntrain = 100000
+    Ntest = int(0.1*Nmols)
+    Nvalid = Nmols - (Ntrain + Ntest)
+
+    # Generate random permutation
+    np.random.seed(0)
+    data_perm = np.random.permutation(Nmols)
+
+    # Now use the permutations to generate the indices of the dataset splits.
+    # train, valid, test, extra = np.split(included_idxs[data_perm], [Ntrain, Ntrain+Nvalid, Ntrain+Nvalid+Ntest])
+
+    train, valid, test, extra = np.split(
+        data_perm, [Ntrain, Ntrain+Nvalid, Ntrain+Nvalid+Ntest])
+
+    assert(len(extra) == 0), 'Split was inexact {} {} {} {}'.format(
+        len(train), len(valid), len(test), len(extra))
+
+    train = included_idxs[train]
+    valid = included_idxs[valid]
+    test = included_idxs[test]
+
+    splits = {'train': train, 'valid': valid, 'test': test}
+
+    # Cleanup
+    cleanup_file(gdb9_txt_excluded, cleanup)
+
+    return splits

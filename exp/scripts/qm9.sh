@@ -4,7 +4,7 @@ python -m exp.run_mol_exp \
   --device 0 \
   --start_seed 0 \
   --stop_seed 9 \
-  --exp_name qm9 \
+  --exp_name qm9-adjusted-y-mean \
   --dataset QM9 \
   --train_eval_period 10 \
   --epochs 150 \
@@ -13,14 +13,14 @@ python -m exp.run_mol_exp \
   --drop_position lin2 \
   --emb_dim 64 \
   --max_dim 2 \
-  --final_readout sum \
+  --final_readout mean \
   --init_method sum \
   --lr 0.001 \
   --graph_norm bn \
   --model qm9_embed_sparse_cin \
   --nonlinearity relu \
   --num_layers 2 \
-  --readout mean \
+  --readout sum \
   --max_ring_size 18 \
   --task_type regression \
   --eval_metric mae \

@@ -58,7 +58,9 @@ class Cochain(object):
     """
     def __init__(self, dim: int, x: Tensor = None, upper_index: Adj = None, lower_index: Adj = None,
                  shared_boundaries: Tensor = None, shared_coboundaries: Tensor = None, mapping: Tensor = None,
-                 boundary_index: Adj = None, upper_orient=None, lower_orient=None, y=None, pos=None, **kwargs):
+                 boundary_index: Adj = None, upper_orient=None, lower_orient=None, y=None, pos=None,
+                 complete_graph_index=None, full_shared_coboundaries=None,
+                 full_x_edges=None, **kwargs):
         if dim == 0:
             assert lower_index is None
             assert shared_boundaries is None
@@ -68,6 +70,9 @@ class Cochain(object):
         # So dim must be stored like this.
         self.__dim__ = dim
         self.position = pos
+        self.complete_graph_index = complete_graph_index
+        self.full_shared_coboundaries = full_shared_coboundaries
+        self.full_x_edges = full_x_edges
         # TODO: check default for x
         self.__x = x
         self.upper_index = upper_index
@@ -87,6 +92,10 @@ class Cochain(object):
                 self.__num_cells__ = item
             elif key == 'num_cells_down':
                 self.num_cells_down = item
+            elif key == 'full_num_cells_up':
+                self.full_num_cells_up = item
+            elif key == 'full_num_cells_down':
+                self.full_num_cells_down = item
             elif key == 'num_cells_up':
                 self.num_cells_up = item
             else:
@@ -144,7 +153,7 @@ class Cochain(object):
         :obj:`key` will get concatenated when creating batches.
         """
         if key in ['upper_index', 'lower_index', 'shared_boundaries',
-                   'shared_coboundaries', 'boundary_index']:
+                   'shared_coboundaries', 'boundary_index', 'complete_graph_index']:
             return -1
         # by default, concatenate sparse matrices diagonally.
         elif isinstance(value, SparseTensor):
@@ -157,12 +166,14 @@ class Cochain(object):
         of the next attribute of :obj:`key` when creating batches.
         """
         # TODO: value is not used in this method. Can it be removed?
-        if key in ['upper_index', 'lower_index']:
+        if key in ['upper_index', 'lower_index', 'complete_graph_index']:
             inc = self.num_cells
         elif key in ['shared_boundaries']:
             inc = self.num_cells_down
         elif key == 'shared_coboundaries':
             inc = self.num_cells_up
+        elif key == 'full_shared_coboundaries':
+            inc = self.full_num_cells_up
         elif key == 'boundary_index':
             boundary_inc = self.num_cells_down if self.num_cells_down is not None else 0
             cell_inc = self.num_cells if self.num_cells is not None else 0
@@ -219,6 +230,40 @@ class Cochain(object):
         """Sets the number of cells in the higher-dimensional cochain of co-dimension 1."""
         # TODO: Add more checks here
         self.__num_cells_up__ = num_cells_up
+
+    @property
+    def full_num_cells_up(self):
+        """Returns the number of cells in the higher-dimensional cochain of co-dimension 1."""
+        if hasattr(self, '__full_num_cells_up__'):
+            return self.__full_num_cells_up__
+        elif self.full_shared_coboundaries is not None:
+            assert self.complete_graph_index is not None
+            return int(self.full_shared_coboundaries.max()) + 1
+        assert self.complete_graph_index is None
+        return 0
+
+    @full_num_cells_up.setter
+    def full_num_cells_up(self, full_num_cells_up):
+        """Sets the number of cells in the higher-dimensional cochain of co-dimension 1."""
+        # TODO: Add more checks here
+        self.__full_num_cells_up__ = full_num_cells_up
+
+    @property
+    def full_num_cells_down(self):
+        """Returns the number of cells in the lower-dimensional cochain of co-dimension 1."""
+        if self.dim == 0:
+            return None
+        if hasattr(self, '__full_num_cells_down__'):
+            return self.__full_num_cells_down__
+        if self.lower_index is None:
+            return 0
+        raise ValueError('Cannot infer the number of cells in the cochain below.')
+
+    @full_num_cells_down.setter
+    def full_num_cells_down(self, full_num_cells_down):
+        """Sets the number of cells in the lower-dimensional cochain of co-dimension 1."""
+        # TODO: Add more checks here
+        self.__full_num_cells_down__ = full_num_cells_down
 
     @property
     def num_cells_down(self):
@@ -597,15 +642,29 @@ class Complex(object):
             # We also check that dim+1 does exist in the current complex. This cochain might have been
             # extracted from a higher dimensional complex by a batching operation, and dim+1
             # might not exist anymore even though cells.upper_index is present.
+            full_x_edges = None
             if cells.upper_index is not None and (dim+1) in self.cochains:
                 upper_index = cells.upper_index
+                # if dim == 0:
+                #     breakpoint()
                 if self.cochains[dim + 1].x is not None and (dim < max_dim or include_top_features):
-                    upper_features = torch.index_select(self.cochains[dim + 1].x, 0,
-                                                        self.cochains[dim].shared_coboundaries)
+                    if self.cochains[dim+1].full_x_edges is not None and dim == 0:
+                        upper_features = torch.index_select(self.cochains[dim + 1].full_x_edges, 0,
+                                                            self.cochains[dim].full_shared_coboundaries)
+                    else:
+                        upper_features = torch.index_select(self.cochains[dim + 1].x, 0,
+                                                            self.cochains[dim].shared_coboundaries)
 
             if cells.position is not None and dim == 0:
                 position = cells.position
+                complete_graph_index = cells.complete_graph_index
+                full_shared_coboundaries = cells.full_shared_coboundaries
+            # elif cells.full_x_edges is not None and dim == 1:
+            #     full_x_edges = cells.full_x_edges
             else:
+                complete_graph_index = None
+                full_shared_coboundaries = None
+                full_x_edges = None
                 position = None
 
             # Add down features
@@ -624,7 +683,10 @@ class Complex(object):
 
             inputs = CochainMessagePassingParams(x, upper_index, lower_index,
                                                up_attr=upper_features, down_attr=lower_features,
-                                               boundary_attr=boundary_features, boundary_index=boundary_index, pos=position)
+                                               boundary_attr=boundary_features, boundary_index=boundary_index,
+                                               pos=position, complete_graph_index=complete_graph_index,)
+                                            #    full_shared_coboundaries=full_shared_coboundaries,
+                                            #    full_x_edges=full_x_edges)
         else:
             raise NotImplementedError(
                 'Dim {} is not present in the complex or not yet supported.'.format(dim))

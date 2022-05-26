@@ -3,7 +3,7 @@ import torch.nn.functional as F
 
 from torch.nn import Linear, Embedding, Sequential, BatchNorm1d as BN
 from torch_geometric.nn import JumpingKnowledge, GINEConv
-from mp.layers import InitReduceConv, EmbedVEWithReduce, OGBEmbedVEWithReduce, SparseCINConv
+from mp.layers import InitReduceConv, EmbedVEWithReduce, OGBEmbedVEWithReduce, SparseCINConv, SparseEquivCINConv
 from ogb.graphproppred.mol_encoder import AtomEncoder, BondEncoder
 from mp.encoder import AtomQM9Encoder, BondQM9Encoder
 from data.complex import ComplexBatch
@@ -257,12 +257,182 @@ class QM9EmbedSparseCIN(torch.nn.Module):
         params = data.get_all_cochain_params(max_dim=self.max_dim, include_down_features=False)
         # breakpoint()
         xs = list(self.init_conv(*params))
-
         # Apply dropout on the input features
         for i, x in enumerate(xs):
             xs[i] = F.dropout(xs[i], p=self.in_dropout_rate, training=self.training)
 
         data.set_xs(xs)
+        # breakpoint()
+        if data.cochains[1].full_x_edges is not None:
+            data.cochains[1].full_x_edges = self.e_embed_init(data.cochains[1].full_x_edges.to(dtype=torch.long))
+        # breakpoint()
+
+        for c, conv in enumerate(self.convs):
+            params = data.get_all_cochain_params(max_dim=self.max_dim, include_down_features=False)
+            start_to_process = 0
+            # Send Cochain Messages through the convolution.
+            xs = conv(*params, start_to_process=start_to_process)
+            # Apply dropout on the output of the conv layer
+            for i, x in enumerate(xs):
+                xs[i] = F.dropout(xs[i], p=self.dropout_rate, training=self.training)
+            data.set_xs(xs)
+
+            if include_partial:
+                for k in range(len(xs)):
+                    res[f"layer{c}_{k}"] = xs[k]
+
+            if self.jump_mode is not None:
+                if jump_xs is None:
+                    jump_xs = [[] for _ in xs]
+                for i, x in enumerate(xs):
+                    jump_xs[i] += [x]
+
+        if self.jump_mode is not None:
+            xs = self.jump_complex(jump_xs)
+
+        # Get joint representation for $p \in 0, 1, 2$ by applying self.readout.
+        xs = pool_complex(xs, data, self.max_dim, self.readout)
+        # Select the dimensions we want at the end.
+        xs = [xs[i] for i in self.readout_dims]
+
+        if include_partial:
+            for k in range(len(xs)):
+                res[f"pool_{k}"] = xs[k]
+        
+        # Compute overall representation.
+        new_xs = []
+        for i, x in enumerate(xs):
+            if self.apply_dropout_before == 'lin1':
+                x = F.dropout(x, p=self.dropout_rate, training=self.training)
+            new_xs.append(act(self.lin1s[self.readout_dims[i]](x)))
+
+        x = torch.stack(new_xs, dim=0)
+        
+        if self.apply_dropout_before == 'final_readout':
+            x = F.dropout(x, p=self.dropout_rate, training=self.training)
+        if self.final_readout == 'mean':
+            x = x.mean(0)
+        elif self.final_readout == 'sum':
+            x = x.sum(0)
+        else:
+            raise NotImplementedError
+        if self.apply_dropout_before not in ['lin1', 'final_readout']:
+            x = F.dropout(x, p=self.dropout_rate, training=self.training)
+
+        x = self.lin2(x)
+
+        if include_partial:
+            res['out'] = x
+            return x, res
+        return x
+
+    def __repr__(self):
+        return self.__class__.__name__
+
+
+class QM9EmbedEquivSparseCIN(torch.nn.Module):
+    """
+    A cellular version of GIN with some tailoring to nimbly work on molecules from the ogbg-mol* dataset.
+    It uses OGB atom and bond encoders.
+
+    This model is based on
+    https://github.com/rusty1s/pytorch_geometric/blob/master/benchmark/kernel/gin.py
+    """
+
+    def __init__(self, out_size, num_layers, hidden, dropout_rate: float = 0.5, 
+                 indropout_rate: float = 0.0, max_dim: int = 2, jump_mode=None,
+                 nonlinearity='relu', readout='sum', train_eps=False, final_hidden_multiplier: int = 2,
+                 readout_dims=(0, 1, 2), final_readout='sum', apply_dropout_before='lin2',
+                 init_reduce='sum', embed_edge=False, embed_dim=None, use_coboundaries=False,
+                 graph_norm='bn'):
+        super(QM9EmbedEquivSparseCIN, self).__init__()
+
+        self.max_dim = max_dim
+        if readout_dims is not None:
+            self.readout_dims = tuple([dim for dim in readout_dims if dim <= max_dim])
+        else:
+            self.readout_dims = list(range(max_dim+1))
+
+        if embed_dim is None:
+            embed_dim = hidden
+        self.v_embed_init = AtomQM9Encoder(embed_dim)
+
+        self.e_embed_init = None
+        if embed_edge:
+            self.e_embed_init = BondQM9Encoder(embed_dim)
+        self.reduce_init = InitReduceConv(reduce=init_reduce)
+        self.init_conv = OGBEmbedVEWithReduce(self.v_embed_init, self.e_embed_init, self.reduce_init)
+
+        self.final_readout = final_readout
+        self.dropout_rate = dropout_rate
+        self.in_dropout_rate = indropout_rate
+        self.apply_dropout_before = apply_dropout_before
+        self.jump_mode = jump_mode
+        self.convs = torch.nn.ModuleList()
+        self.nonlinearity = nonlinearity
+        self.readout = readout
+        act_module = get_nonlinearity(nonlinearity, return_module=True)
+        self.graph_norm = get_graph_norm(graph_norm)
+        for i in range(num_layers):
+            layer_dim = embed_dim if i == 0 else hidden
+            self.convs.append(
+                SparseEquivCINConv(up_msg_size=layer_dim, down_msg_size=layer_dim,
+                    boundary_msg_size=layer_dim, passed_msg_boundaries_nn=None,
+                    passed_msg_up_nn=None, passed_update_up_nn=None,
+                    passed_update_boundaries_nn=None, train_eps=train_eps, max_dim=self.max_dim,
+                    hidden=hidden, act_module=act_module, layer_dim=layer_dim,
+                    graph_norm=self.graph_norm, use_coboundaries=use_coboundaries))
+        self.jump = JumpingKnowledge(jump_mode) if jump_mode is not None else None
+        self.lin1s = torch.nn.ModuleList()
+        for _ in range(max_dim + 1):
+            if jump_mode == 'cat':
+                # These layers don't use a bias. Then, in case a level is not present the output
+                # is just zero and it is not given by the biases.
+                self.lin1s.append(Linear(num_layers * hidden, final_hidden_multiplier * hidden,
+                    bias=False))
+            else:
+                self.lin1s.append(Linear(hidden, final_hidden_multiplier * hidden))
+        self.lin2 = Linear(final_hidden_multiplier * hidden, out_size)
+
+    def reset_parameters(self):
+        for conv in self.convs:
+            conv.reset_parameters()
+        if self.jump_mode is not None:
+            self.jump.reset_parameters()
+        self.init_conv.reset_parameters()
+        self.lin1s.reset_parameters()
+        self.lin2.reset_parameters()
+
+    def jump_complex(self, jump_xs):
+        # Perform JumpingKnowledge at each level of the complex
+        xs = []
+        for jumpx in jump_xs:
+            xs += [self.jump(jumpx)]
+        return xs
+
+    def forward(self, data: ComplexBatch, include_partial=False):
+        """
+        include_partial: Keep track of each component's output (for debugging?).
+        """
+        act = get_nonlinearity(self.nonlinearity, return_module=False)
+        xs, jump_xs = None, None
+        res = {}
+
+        # Embed and populate higher-levels
+        params = data.get_all_cochain_params(max_dim=self.max_dim, include_down_features=False)
+        # breakpoint()
+        xs = list(self.init_conv(*params))
+        # Apply dropout on the input features
+        for i, x in enumerate(xs):
+            xs[i] = F.dropout(xs[i], p=self.in_dropout_rate, training=self.training)
+
+        data.set_xs(xs)
+        # breakpoint()
+        # Ensure `full_x_edges` are also processed.
+        # TODO: Are we still using them? Or have we fixed them with indexing?
+        if data.cochains[1].full_x_edges is not None:
+            data.cochains[1].full_x_edges = self.e_embed_init(data.cochains[1].full_x_edges.to(dtype=torch.long))
+        # breakpoint()
 
         for c, conv in enumerate(self.convs):
             params = data.get_all_cochain_params(max_dim=self.max_dim, include_down_features=False)

@@ -17,7 +17,7 @@ python -m exp.run_mol_exp \
   --init_method sum \
   --lr 0.001 \
   --graph_norm bn \
-  --model qm9_embed_sparse_cin \
+  --model qm9_embed_equiv_sparse_cin \
   --nonlinearity relu \
   --num_layers 2 \
   --readout sum \
@@ -31,5 +31,4 @@ python -m exp.run_mol_exp \
   --early_stop \
   --lr_scheduler_patience 10 \
   --dump_curves \
-  --use_pos \
   --preproc_jobs 32

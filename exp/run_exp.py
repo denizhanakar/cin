@@ -14,7 +14,7 @@ from exp.train_utils import train, eval, Evaluator
 from exp.parser import get_parser, validate_args
 from mp.graph_models import GIN0, GINWithJK
 from mp.models import CIN0, Dummy, SparseCIN, EdgeOrient, EdgeMPNN, MessagePassingAgnostic
-from mp.molec_models import EmbedSparseCIN, OGBEmbedSparseCIN, EmbedSparseCINNoRings, EmbedGIN, QM9EmbedSparseCIN
+from mp.molec_models import EmbedSparseCIN, OGBEmbedSparseCIN, EmbedSparseCINNoRings, EmbedGIN, QM9EmbedEquivSparseCIN, QM9EmbedSparseCIN
 from mp.ring_exp_models import RingSparseCIN, RingGIN
 
 
@@ -290,7 +290,24 @@ def main(args):
                                   embed_edge=args.use_edge_features,       # whether to use edge feats
                                   graph_norm=args.graph_norm,              # normalization layer
                                   readout_dims=readout_dims,               # readout_dims
-                                  use_pos=args.use_pos                     # use positional parameters
+                                  use_pos=args.use_pos,                     # use positional parameters
+                                 ).to(device)
+    elif args.model == 'qm9_embed_equiv_sparse_cin':
+        model = QM9EmbedEquivSparseCIN(1,                                       # out_size
+                                  args.num_layers,                         # num_layers
+                                  args.emb_dim,                            # hidden
+                                  dropout_rate=args.drop_rate,             # dropout_rate
+                                  indropout_rate=args.indrop_rate,         # in-dropout_rate
+                                  max_dim=dataset.max_dim,                 # max_dim
+                                  jump_mode=args.jump_mode,                # jump_mode
+                                  nonlinearity=args.nonlinearity,          # nonlinearity
+                                  readout=args.readout,                    # readout
+                                  final_readout=args.final_readout,        # final readout
+                                  apply_dropout_before=args.drop_position, # where to apply dropout
+                                  use_coboundaries=use_coboundaries,       # whether to use coboundaries
+                                  embed_edge=args.use_edge_features,       # whether to use edge feats
+                                  graph_norm=args.graph_norm,              # normalization layer
+                                  readout_dims=readout_dims,               # readout_dims
                                  ).to(device)
     else:
         raise ValueError('Invalid model type {}.'.format(args.model))
