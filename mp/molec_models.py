@@ -429,7 +429,7 @@ class QM9EmbedEquivSparseCIN(torch.nn.Module):
         data.set_xs(xs)
         # breakpoint()
         # Ensure `full_x_edges` are also processed.
-        # TODO: Are we still using them? Or have we fixed them with indexing?
+        # We use full_x_edges for the next batch which will be processed.
         if data.cochains[1].full_x_edges is not None:
             data.cochains[1].full_x_edges = self.e_embed_init(data.cochains[1].full_x_edges.to(dtype=torch.long))
         # breakpoint()

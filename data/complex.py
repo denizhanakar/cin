@@ -685,8 +685,6 @@ class Complex(object):
                                                up_attr=upper_features, down_attr=lower_features,
                                                boundary_attr=boundary_features, boundary_index=boundary_index,
                                                pos=position, complete_graph_index=complete_graph_index,)
-                                            #    full_shared_coboundaries=full_shared_coboundaries,
-                                            #    full_x_edges=full_x_edges)
         else:
             raise NotImplementedError(
                 'Dim {} is not present in the complex or not yet supported.'.format(dim))
