@@ -643,17 +643,18 @@ class Complex(object):
             # extracted from a higher dimensional complex by a batching operation, and dim+1
             # might not exist anymore even though cells.upper_index is present.
             full_x_edges = None
+            full_upper_features = None
             if cells.upper_index is not None and (dim+1) in self.cochains:
                 upper_index = cells.upper_index
                 # if dim == 0:
                 #     breakpoint()
                 if self.cochains[dim + 1].x is not None and (dim < max_dim or include_top_features):
-                    if self.cochains[dim+1].full_x_edges is not None and dim == 0:
-                        upper_features = torch.index_select(self.cochains[dim + 1].full_x_edges, 0,
-                                                            self.cochains[dim].full_shared_coboundaries)
-                    else:
-                        upper_features = torch.index_select(self.cochains[dim + 1].x, 0,
-                                                            self.cochains[dim].shared_coboundaries)
+                    # if self.cochains[dim+1].full_x_edges is not None and dim == 0:
+                    #     full_upper_features = torch.index_select(self.cochains[dim + 1].full_x_edges, 0,
+                    #                                         self.cochains[dim].full_shared_coboundaries)
+                        # breakpoint()
+                    upper_features = torch.index_select(self.cochains[dim + 1].x, 0,
+                                                        self.cochains[dim].shared_coboundaries)
 
             if cells.position is not None and dim == 0:
                 position = cells.position
@@ -684,7 +685,8 @@ class Complex(object):
             inputs = CochainMessagePassingParams(x, upper_index, lower_index,
                                                up_attr=upper_features, down_attr=lower_features,
                                                boundary_attr=boundary_features, boundary_index=boundary_index,
-                                               pos=position, complete_graph_index=complete_graph_index,)
+                                               pos=position, complete_graph_index=complete_graph_index,
+                                               full_up_attr=full_upper_features)
         else:
             raise NotImplementedError(
                 'Dim {} is not present in the complex or not yet supported.'.format(dim))

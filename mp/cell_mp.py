@@ -222,7 +222,6 @@ class CochainMessagePassing(torch.nn.Module):
                 dim = 0 if arg[-2:] == '_j' else 1
                 # Extract any part up to _j or _i. So for x_j extract x
                 if adjacency == 'up' and arg.startswith('up_'):
-                    # breakpoint()
                     data = kwargs.get(arg[3:-2], Parameter.empty)
                     size_data = data
                 elif adjacency == 'down' and arg.startswith('down_'):
@@ -379,10 +378,14 @@ class CochainMessagePassing(torch.nn.Module):
         # IS THE MESSAGING NOT ALTERED AT ALL?
         # breakpoint()
         if up_index is not None:
-            if down_index is None and 'complete_graph_index' in kwargs and kwargs['complete_graph_index'] is not None:
-                up_out = self.__message_and_aggregate__(kwargs['complete_graph_index'], 'up', up_size, **kwargs)
-            else:
-                up_out = self.__message_and_aggregate__(up_index, 'up', up_size, **kwargs)
+            if kwargs['use_pos'] and down_index is None and 'complete_graph_index' in kwargs and kwargs['complete_graph_index'] is not None:
+                up_index = kwargs['complete_graph_index']
+                # complete_graph_index = kwargs['complete_graph_index']
+                # for col in complete_graph_index.T:
+                #     # If we don't have any column equal to this complete_graph_index column
+                #     if not (col==up_index.T).all(dim=1).any():
+                #         up_index = torch.cat((up_index, col.T.unsqueeze(1)), 1)
+            up_out = self.__message_and_aggregate__(up_index, 'up', up_size, **kwargs)
 
         # Down messaging and aggregation
         if self.use_down_msg and down_index is not None:

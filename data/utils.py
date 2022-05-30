@@ -17,6 +17,8 @@ from joblib import delayed
 
 from torch_geometric.utils import remove_self_loops
 
+from collections import defaultdict
+
 
 def pyg_to_simplex_tree(edge_index: Tensor, size: int):
     """Constructs a simplex tree from a PyG graph.
@@ -179,10 +181,7 @@ def extract_labels(y, size):
 def generate_cochain(dim, x, all_upper_index, all_lower_index,
                    all_shared_boundaries, all_shared_coboundaries, cell_tables, boundaries_tables,
                    complex_dim, y=None, pos=None, num_nodes=None, use_pos=False,
-                   complete_graph_index=None,
-                   full_cell_tables=None,
-                   full_shared_coboundaries=None,
-                   full_x_edges=None):
+                   complete_graph_index=None):
     """Builds a Cochain given all the adjacency data extracted from the complex."""
     if dim == 0:
         assert len(all_lower_index[dim]) == 0
@@ -190,14 +189,6 @@ def generate_cochain(dim, x, all_upper_index, all_lower_index,
 
     num_cells_down = len(cell_tables[dim-1]) if dim > 0 else None
     num_cells_up = len(cell_tables[dim+1]) if dim < complex_dim else 0
-
-    if full_cell_tables is not None:
-        full_num_cells_down = len(full_cell_tables[dim-1]) if dim > 0 else None
-        # breakpoint()
-        full_num_cells_up = len(full_cell_tables[dim+1]) if dim < 1 else 0
-    else:
-        full_num_cells_up = None
-        full_num_cells_down = None
 
     up_index = (torch.tensor(all_upper_index[dim], dtype=torch.long).t()
                 if len(all_upper_index[dim]) > 0 else None)
@@ -208,11 +199,20 @@ def generate_cochain(dim, x, all_upper_index, all_lower_index,
     shared_boundaries = (torch.tensor(all_shared_boundaries[dim], dtype=torch.long)
                     if len(all_shared_boundaries[dim]) > 0 else None)
 
+
     if complete_graph_index is not None:
-        complete_graph_index = (torch.tensor(complete_graph_index[dim], dtype=torch.long).t()
-                    if len(complete_graph_index[dim]) > 0 else None)
-        full_shared_coboundaries = (torch.tensor(full_shared_coboundaries[dim], dtype=torch.long)
-                        if len(full_shared_coboundaries[dim]) > 0 else None)
+        # complete_graph_index = kwargs['complete_graph_index']
+        new_index = up_index.clone().detach()
+        dic = defaultdict(int)
+        for col in new_index.T:
+            dic[tuple(col.tolist())] += 1
+        for col in complete_graph_index.T:
+            # If we don't have any column equal to this complete_graph_index column
+            tup_col = tuple(col.tolist())
+            if dic[tup_col] == 0:
+                new_index = torch.cat((new_index, col.T.unsqueeze(1)), 1)
+                dic[tup_col] += 1
+        complete_graph_index = new_index
     
     boundary_index = None
     if len(boundaries_tables[dim]) > 0:
@@ -239,11 +239,7 @@ def generate_cochain(dim, x, all_upper_index, all_lower_index,
                  lower_index=down_index, shared_coboundaries=shared_coboundaries,
                  shared_boundaries=shared_boundaries, y=y, num_cells_down=num_cells_down,
                  num_cells_up=num_cells_up, boundary_index=boundary_index, pos=pos,
-                 full_num_cells_up=full_num_cells_up,
-                 full_num_cells_down=full_num_cells_down,
                  complete_graph_index=complete_graph_index,
-                 full_shared_coboundaries=full_shared_coboundaries,
-                 full_x_edges=full_x_edges
                  )
 
 
@@ -500,6 +496,7 @@ def compute_ring_2complex(x: Union[Tensor, np.ndarray],
 
 
     # FULL/COMPLETE GRAPH VERSION
+    # breakpoint()
     num_nodes = size
     device = edge_index.device
 
@@ -509,22 +506,7 @@ def compute_ring_2complex(x: Union[Tensor, np.ndarray],
     row = row.view(-1, 1).repeat(1, num_nodes).view(-1)
     col = col.repeat(num_nodes)
     full_edge_index = torch.stack([row, col], dim=0)
-
-    full_simplex_tree = pyg_to_simplex_tree(full_edge_index, size)
-    full_cell_tables, full_id_maps = build_tables_with_rings(full_edge_index, full_simplex_tree, size, 0)
-    full_complex_dim = len(full_id_maps)-1
-    full_boundaries_tables, full_boundaries, full_co_boundaries = extract_boundaries_and_coboundaries_with_rings(full_simplex_tree, full_id_maps)
-    full_shared_boundaries, full_shared_coboundaries, full_lower_idx, full_upper_idx = build_adj(full_boundaries, full_co_boundaries, full_id_maps,
-                                                                   full_complex_dim, include_down_adj)
-    if edge_attr is not None:
-        idx = edge_index[0] * num_nodes + edge_index[1]
-        size = list(edge_attr.size())
-        size[0] = num_nodes * num_nodes
-        full_edge_attr = edge_attr.new_zeros(size)
-        # Assign the existing data.edge_attr to the edges we know to exist.
-        full_edge_attr[idx] = edge_attr
-    full_edge_index, full_edge_attr = remove_self_loops(full_edge_index, full_edge_attr)
-
+    full_edge_index, _ = remove_self_loops(full_edge_index)
 
     # Construct features for the higher dimensions
     xs = [x, None, None]
@@ -571,50 +553,6 @@ def compute_ring_2complex(x: Union[Tensor, np.ndarray],
     # Initialise the node / complex labels
     v_y, complex_y = extract_labels(y, size)
 
-    # FOR FULL GRAPH
-    # Construct features for the higher dimensions
-    full_xs = [x, None, None]
-    # full_constructed_features = construct_features(x, full_cell_tables, init_method)
-    # if full_simplex_tree.dimension() == 0:
-    #     assert len(full_constructed_features) == 1
-    # if init_rings and len(full_constructed_features) > 2:
-    #     full_xs[2] = full_constructed_features[2]
-    
-    # Edge logic.
-    if init_edges and full_simplex_tree.dimension() >= 1:
-        if full_edge_attr is None:
-            pass
-            # full_xs[1] = full_constructed_features[1]
-        # If we have edge-features we simply use them for 1-cells
-        else:
-            # breakpoint()
-            # If full_edge_attr is a list of scalar features, make it a matrix
-            if full_edge_attr.dim() == 1:
-                full_edge_attr = full_edge_attr.view(-1, 1)
-            # Retrieve feats and check edge features are undirected
-            ex = dict()
-            for e, edge in enumerate(full_edge_index.numpy().T):
-                canon_edge = tuple(sorted(edge))
-                edge_id = full_id_maps[1][canon_edge]
-                edge_feats = full_edge_attr[e]
-                if edge_id in ex:
-                    assert torch.equal(ex[edge_id], edge_feats)
-                else:
-                    ex[edge_id] = edge_feats
-
-            # Build edge feature matrix
-            max_id = max(ex.keys())
-            edge_feats = []
-            assert len(full_cell_tables[1]) == max_id + 1
-            for id in range(max_id + 1):
-                edge_feats.append(ex[id])
-            full_xs[1] = torch.stack(edge_feats, dim=0)
-            # breakpoint()
-            assert full_xs[1].dim() == 2
-            assert full_xs[1].size(0) == len(full_id_maps[1])
-            assert full_xs[1].size(1) == full_edge_attr.size(1)
-
-
     cochains = []
     if pos is not None:
         use_pos = True
@@ -634,15 +572,11 @@ def compute_ring_2complex(x: Union[Tensor, np.ndarray],
             cochain = generate_cochain(i, xs[i], upper_idx, lower_idx, shared_boundaries, shared_coboundaries,
                                cell_tables, boundaries_tables, complex_dim=complex_dim, y=y, num_nodes=x.size(0),
                                pos=pos,
-                               complete_graph_index=full_upper_idx,
-                               full_shared_coboundaries=full_shared_coboundaries,
-                               full_cell_tables=full_cell_tables,
+                               complete_graph_index=full_edge_index,
                                use_pos=use_pos)
         elif i == 1:
             cochain = generate_cochain(i, xs[i], upper_idx, lower_idx, shared_boundaries, shared_coboundaries,
                                 cell_tables, boundaries_tables, complex_dim=complex_dim, y=y, num_nodes=x.size(0),
-                                full_x_edges=full_xs[i],
-                                full_cell_tables=full_cell_tables,
                                 use_pos=use_pos)
         else:
             cochain = generate_cochain(i, xs[i], upper_idx, lower_idx, shared_boundaries, shared_coboundaries,
@@ -665,8 +599,8 @@ def convert_graph_dataset_with_rings(dataset, max_ring_size=7, include_down_adj=
         return x
 
     # Process the dataset in parallel
-    # parallel = ProgressParallel(n_jobs=n_jobs, use_tqdm=True, total=len(dataset))
-    parallel = ProgressParallel(n_jobs=1, use_tqdm=True, total=len(dataset))
+    parallel = ProgressParallel(n_jobs=n_jobs, use_tqdm=True, total=len(dataset))
+    # parallel = ProgressParallel(n_jobs=1, use_tqdm=True, total=len(dataset))
     # It is important we supply a numpy array here. tensors seem to slow joblib down significantly.
     # We then add data.pos so we preserve that for future use by the model.
     if not hasattr(dataset[0], "pos"):

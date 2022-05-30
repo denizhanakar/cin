@@ -179,7 +179,7 @@ class QM9EmbedSparseCIN(torch.nn.Module):
                  nonlinearity='relu', readout='sum', train_eps=False, final_hidden_multiplier: int = 2,
                  readout_dims=(0, 1, 2), final_readout='sum', apply_dropout_before='lin2',
                  init_reduce='sum', embed_edge=False, embed_dim=None, use_coboundaries=False,
-                 graph_norm='bn', use_pos=True):
+                 graph_norm='bn', use_pos=False, use_complete=True):
         super(QM9EmbedSparseCIN, self).__init__()
 
         self.max_dim = max_dim
@@ -190,11 +190,13 @@ class QM9EmbedSparseCIN(torch.nn.Module):
 
         if embed_dim is None:
             embed_dim = hidden
-        self.v_embed_init = AtomQM9Encoder(embed_dim)
+        # self.v_embed_init = AtomQM9Encoder(embed_dim)
+        self.v_embed_init = Linear(11, embed_dim)
 
         self.e_embed_init = None
         if embed_edge:
-            self.e_embed_init = BondQM9Encoder(embed_dim)
+            # self.e_embed_init = BondQM9Encoder(embed_dim)
+            self.e_embed_init = Linear(4, embed_dim)
         self.reduce_init = InitReduceConv(reduce=init_reduce)
         self.init_conv = OGBEmbedVEWithReduce(self.v_embed_init, self.e_embed_init, self.reduce_init)
 
@@ -216,7 +218,8 @@ class QM9EmbedSparseCIN(torch.nn.Module):
                     passed_msg_up_nn=None, passed_update_up_nn=None,
                     passed_update_boundaries_nn=None, train_eps=train_eps, max_dim=self.max_dim,
                     hidden=hidden, act_module=act_module, layer_dim=layer_dim,
-                    graph_norm=self.graph_norm, use_coboundaries=use_coboundaries, use_pos=use_pos))
+                    graph_norm=self.graph_norm, use_coboundaries=use_coboundaries,
+                    use_pos=use_pos, use_complete=use_complete))
         self.jump = JumpingKnowledge(jump_mode) if jump_mode is not None else None
         self.lin1s = torch.nn.ModuleList()
         for _ in range(max_dim + 1):
@@ -263,13 +266,14 @@ class QM9EmbedSparseCIN(torch.nn.Module):
 
         data.set_xs(xs)
         # breakpoint()
-        if data.cochains[1].full_x_edges is not None:
-            data.cochains[1].full_x_edges = self.e_embed_init(data.cochains[1].full_x_edges.to(dtype=torch.long))
+        # if data.cochains[1].full_x_edges is not None:
+        #     data.cochains[1].full_x_edges = self.e_embed_init(data.cochains[1].full_x_edges.to(dtype=torch.long))
         # breakpoint()
 
         for c, conv in enumerate(self.convs):
             params = data.get_all_cochain_params(max_dim=self.max_dim, include_down_features=False)
             start_to_process = 0
+            # breakpoint()
             # Send Cochain Messages through the convolution.
             xs = conv(*params, start_to_process=start_to_process)
             # Apply dropout on the output of the conv layer
@@ -355,11 +359,13 @@ class QM9EmbedEquivSparseCIN(torch.nn.Module):
 
         if embed_dim is None:
             embed_dim = hidden
-        self.v_embed_init = AtomQM9Encoder(embed_dim)
+        # self.v_embed_init = AtomQM9Encoder(embed_dim)
+        self.v_embed_init = Linear(11, embed_dim)
 
         self.e_embed_init = None
         if embed_edge:
-            self.e_embed_init = BondQM9Encoder(embed_dim)
+            # self.e_embed_init = BondQM9Encoder(embed_dim)
+            self.e_embed_init = Linear(4, embed_dim)
         self.reduce_init = InitReduceConv(reduce=init_reduce)
         self.init_conv = OGBEmbedVEWithReduce(self.v_embed_init, self.e_embed_init, self.reduce_init)
 
@@ -430,15 +436,20 @@ class QM9EmbedEquivSparseCIN(torch.nn.Module):
         # breakpoint()
         # Ensure `full_x_edges` are also processed.
         # We use full_x_edges for the next batch which will be processed.
-        if data.cochains[1].full_x_edges is not None:
-            data.cochains[1].full_x_edges = self.e_embed_init(data.cochains[1].full_x_edges.to(dtype=torch.long))
+        # if data.cochains[1].full_x_edges is not None:
+        #     data.cochains[1].full_x_edges = self.e_embed_init(data.cochains[1].full_x_edges.to(dtype=torch.long))
         # breakpoint()
-
+        # print(data.cochains[0].position[0])
         for c, conv in enumerate(self.convs):
             params = data.get_all_cochain_params(max_dim=self.max_dim, include_down_features=False)
             start_to_process = 0
             # Send Cochain Messages through the convolution.
             xs = conv(*params, start_to_process=start_to_process)
+            pos_out = xs[0][1]
+            xs[0] = xs[0][0]
+            data.cochains[0].position = pos_out
+            # print(data.cochains[0].position[0])
+
             # Apply dropout on the output of the conv layer
             for i, x in enumerate(xs):
                 xs[i] = F.dropout(xs[i], p=self.dropout_rate, training=self.training)
@@ -453,7 +464,6 @@ class QM9EmbedEquivSparseCIN(torch.nn.Module):
                     jump_xs = [[] for _ in xs]
                 for i, x in enumerate(xs):
                     jump_xs[i] += [x]
-
         if self.jump_mode is not None:
             xs = self.jump_complex(jump_xs)
 

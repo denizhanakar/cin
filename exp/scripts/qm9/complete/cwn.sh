@@ -3,24 +3,24 @@
 python -m exp.run_mol_exp \
   --device 0 \
   --start_seed 0 \
-  --stop_seed 0 \
-  --exp_name qm9-pos-adjusted-y-mean \
+  --stop_seed 1 \
+  --init_method sum \
+  --readout mean \
+  --final_readout sum \
+  --emb_dim 64 \
+  --exp_name cwn-complete \
   --dataset QM9 \
   --train_eval_period 10 \
-  --epochs 150 \
+  --epochs 200 \
   --batch_size 128 \
   --drop_rate 0.0 \
   --drop_position lin2 \
-  --emb_dim 64 \
   --max_dim 2 \
-  --final_readout mean \
-  --init_method sum \
-  --lr 0.001 \
+  --lr 0.0001 \
   --graph_norm bn \
   --model qm9_embed_sparse_cin \
   --nonlinearity relu \
   --num_layers 2 \
-  --readout sum \
   --max_ring_size 18 \
   --task_type regression \
   --eval_metric mae \
@@ -31,5 +31,5 @@ python -m exp.run_mol_exp \
   --early_stop \
   --lr_scheduler_patience 10 \
   --dump_curves \
-  --use_pos \
+  --use_complete \
   --preproc_jobs 32

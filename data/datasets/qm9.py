@@ -73,8 +73,8 @@ class QM9Dataset(InMemoryComplexDataset):
         # Get the old mean and std of our target dipole moments.
         mean, std = mean[:, target].item(), std[:, target].item()
         
+        perm = torch.randperm(len(dataset))
         if self._subset:
-            perm = torch.randperm(len(dataset))
             train_slice = perm[:1000]
             val_slice = perm[1000:2000]
             test_slice = perm[2000:3000]
@@ -199,8 +199,10 @@ class CollapseDeleteQM9Features(object):
         # This is to convert from one-hot to scalar, keeping the dimensions ([node_num, 1] shape)
         # We, for now, delete the rest of the features.
         # data.x = torch.nonzero(data.x[:, :5])[:, 1:2]
-        data.x = torch.cat((torch.nonzero(data.x[:, :5])[:, 1:2], data.x[:, 5:]), 1)
         # data.x = torch.cat((data.x, data.pos), 1)
+
+        # Collapse the features.
+        # data.x = torch.cat((torch.nonzero(data.x[:, :5])[:, 1:2], data.x[:, 5:]), 1)
 
         # NON-COMMMENT: Edges are also one-hot, we convert to scalar, this time not keeping the dimensions ([edge_num] shape)
         # COMMENT: We actually keep the edge attribute as is.

@@ -168,11 +168,13 @@ class SparseCINCochainConv(CochainMessagePassing):
                  combine_nn: Callable,
                  eps: float = 0.,
                  train_eps: bool = False,
-                 use_pos: bool = False):
+                 use_pos: bool = False,
+                 use_complete: bool = False):
         super(SparseCINCochainConv, self).__init__(up_msg_size, down_msg_size, boundary_msg_size=boundary_msg_size,
                                                  use_down_msg=False)
         self.dim = dim
         self.use_pos = use_pos
+        self.use_complete = use_complete
         self.msg_up_nn = msg_up_nn
         self.msg_boundaries_nn = msg_boundaries_nn
         self.update_up_nn = update_up_nn
@@ -187,7 +189,7 @@ class SparseCINCochainConv(CochainMessagePassing):
             self.register_buffer('eps2', torch.Tensor([eps]))
         self.reset_parameters()
 
-    def forward(self, cochain: CochainMessagePassingParams, pos=False):
+    def forward(self, cochain: CochainMessagePassingParams):
         """
         The paper specifies (1+\epsilon) and also a sum across all \tau from the boundary of \sigma.
         We first get the boundary via self.propagate(?)
@@ -199,9 +201,10 @@ class SparseCINCochainConv(CochainMessagePassing):
                                               cochain.boundary_index, x=cochain.x,
                                               pos=cochain.pos,
                                               complete_graph_index=cochain.complete_graph_index,
-                                            #   full_x_edges=cochain.full_x_edges,
+                                              use_complete=self.use_complete,
                                               up_attr=cochain.kwargs['up_attr'],
-                                              boundary_attr=cochain.kwargs['boundary_attr'])
+                                              boundary_attr=cochain.kwargs['boundary_attr'],
+                                              use_pos=self.use_pos)
         # As in GIN, we can learn an injective update function for each multi-set
         # Add 
         out_up += (1 + self.eps1) * cochain.x
@@ -232,6 +235,8 @@ class SparseCINCochainConv(CochainMessagePassing):
         # WE CAN USE self.dim!
         if self.use_pos and self.dim == 0:
             distances = torch.linalg.norm(up_pos_i - up_pos_j, dim=1).unsqueeze(1)
+            to_cat_zeros = torch.zeros(up_x_j.shape[0] - up_attr.shape[0], up_attr.shape[1]).to(device=up_x_j.device)
+            up_attr = torch.cat((up_attr, to_cat_zeros), 0)
             return self.msg_up_nn((up_x_j, up_attr, distances))
             # return self.msg_up_nn((up_x_j, up_attr, torch.zeros(up_x_j.shape[0], 1).to(device=up_x_j.device)))
         else:
@@ -254,10 +259,12 @@ class SparseEquivCINCochainConv(CochainMessagePassing):
                  update_boundaries_nn: Callable,
                  combine_nn: Callable,
                  eps: float = 0.,
-                 train_eps: bool = False):
+                 train_eps: bool = False,
+                 use_complete: bool = False):
         super(SparseEquivCINCochainConv, self).__init__(up_msg_size, down_msg_size, boundary_msg_size=boundary_msg_size,
                                                  use_down_msg=False)
         self.dim = dim
+        self.use_complete = use_complete
         self.mlp_wght = Linear(up_msg_size, 1)
         self.msg_up_nn = msg_up_nn
         self.msg_boundaries_nn = msg_boundaries_nn
@@ -279,7 +286,7 @@ class SparseEquivCINCochainConv(CochainMessagePassing):
 
         self.reset_parameters()
 
-    def forward(self, cochain: CochainMessagePassingParams, pos=False):
+    def forward(self, cochain: CochainMessagePassingParams):
         """
         The paper specifies (1+\epsilon) and also a sum across all \tau from the boundary of \sigma.
         We first get the boundary via self.propagate(?)
@@ -291,9 +298,10 @@ class SparseEquivCINCochainConv(CochainMessagePassing):
                                               cochain.boundary_index, x=cochain.x,
                                               pos=cochain.pos,
                                               complete_graph_index=cochain.complete_graph_index,
-                                            #   full_x_edges=cochain.full_x_edges,
+                                              use_complete=self.use_complete,
                                               up_attr=cochain.kwargs['up_attr'],
-                                              boundary_attr=cochain.kwargs['boundary_attr'])
+                                              boundary_attr=cochain.kwargs['boundary_attr'],
+                                              use_pos=True)
         # As in GIN, we can learn an injective update function for each multi-set
         # Add 
         out_up += (1 + self.eps1) * cochain.x
@@ -304,7 +312,7 @@ class SparseEquivCINCochainConv(CochainMessagePassing):
         # We need to combine the two such that the output is injective
         # Because the cross product of countable spaces is countable, then such a function exists.
         # And we can learn it with another MLP.
-        return self.combine_nn(torch.cat([out_up, out_boundaries], dim=-1))
+        return self.combine_nn(torch.cat([out_up, out_boundaries], dim=-1)), pos_out
 
     def reset_parameters(self):
         reset(self.msg_up_nn)
@@ -324,10 +332,11 @@ class SparseEquivCINCochainConv(CochainMessagePassing):
         # WE CAN USE self.dim!
         if self.dim == 0:
             distances = torch.linalg.norm(up_pos_i - up_pos_j, dim=1).unsqueeze(1)
+            to_cat_zeros = torch.zeros(up_x_j.shape[0] - up_attr.shape[0], up_attr.shape[1]).to(device=up_x_j.device)
+            up_attr = torch.cat((up_attr, to_cat_zeros), 0)
             messages = self.msg_up_nn((up_x_j, up_attr, distances))
             self.weights = self.mlp_wght(messages)
             return messages
-            # return self.msg_up_nn((up_x_j, up_attr, torch.zeros(up_x_j.shape[0], 1).to(device=up_x_j.device)))
         else:
             return self.msg_up_nn((up_x_j, up_attr))
 
@@ -382,94 +391,6 @@ class Catter(torch.nn.Module):
     def forward(self, x):
         # breakpoint()
         return torch.cat(x, dim=-1)
-    
-    
-class SparseEquivCINConv(torch.nn.Module):
-    """A cellular version of GIN which performs message passing from cellular upper
-    neighbors and boundaries, but not from lower neighbors (hence why "Sparse")
-    """
-
-    # TODO: Refactor the way we pass networks externally to allow for different networks per dim.
-    # This?
-    def __init__(self, up_msg_size: int, down_msg_size: int, boundary_msg_size: Optional[int],
-                 passed_msg_up_nn: Optional[Callable], passed_msg_boundaries_nn: Optional[Callable],
-                 passed_update_up_nn: Optional[Callable],
-                 passed_update_boundaries_nn: Optional[Callable],
-                 eps: float = 0., train_eps: bool = False, max_dim: int = 2,
-                 graph_norm=BN, use_coboundaries=False, **kwargs):
-        super(SparseEquivCINConv, self).__init__()
-        self.max_dim = max_dim
-        self.mp_levels = torch.nn.ModuleList()
-        for dim in range(max_dim+1):
-            msg_up_nn = passed_msg_up_nn
-            if msg_up_nn is None:
-                if use_coboundaries:
-                    if dim == 0:
-                        # breakpoint()
-                        msg_up_nn = Sequential(
-                                Catter(),
-                                Linear(kwargs['layer_dim'] * 2 + 1, kwargs['layer_dim']),
-                                kwargs['act_module']())
-                    else:
-                        msg_up_nn = Sequential(
-                                Catter(),
-                                Linear(kwargs['layer_dim'] * 2, kwargs['layer_dim']),
-                                kwargs['act_module']())
-                else:
-                    msg_up_nn = lambda xs: xs[0]
-
-            msg_boundaries_nn = passed_msg_boundaries_nn
-            if msg_boundaries_nn is None:
-                msg_boundaries_nn = lambda x: x
-
-            update_up_nn = passed_update_up_nn
-            if update_up_nn is None:
-                update_up_nn = Sequential(
-                    Linear(kwargs['layer_dim'], kwargs['hidden']),
-                    graph_norm(kwargs['hidden']),
-                    kwargs['act_module'](),
-                    Linear(kwargs['hidden'], kwargs['hidden']),
-                    graph_norm(kwargs['hidden']),
-                    kwargs['act_module']()
-                )
-
-            update_boundaries_nn = passed_update_boundaries_nn
-            if update_boundaries_nn is None:
-                update_boundaries_nn = Sequential(
-                    Linear(kwargs['layer_dim'], kwargs['hidden']),
-                    graph_norm(kwargs['hidden']),
-                    kwargs['act_module'](),
-                    Linear(kwargs['hidden'], kwargs['hidden']),
-                    graph_norm(kwargs['hidden']),
-                    kwargs['act_module']()
-                )
-            combine_nn = Sequential(
-                Linear(kwargs['hidden']*2, kwargs['hidden']),
-                graph_norm(kwargs['hidden']),
-                kwargs['act_module']())
-
-            if dim == 0:
-                mp = SparseEquivCINCochainConv(dim, up_msg_size, down_msg_size, boundary_msg_size=boundary_msg_size,
-                    msg_up_nn=msg_up_nn, msg_boundaries_nn=msg_boundaries_nn, update_up_nn=update_up_nn,
-                    update_boundaries_nn=update_boundaries_nn, combine_nn=combine_nn, eps=eps,
-                    train_eps=train_eps)
-            else:
-                mp = SparseCINCochainConv(dim, up_msg_size, down_msg_size, boundary_msg_size=boundary_msg_size,
-                    msg_up_nn=msg_up_nn, msg_boundaries_nn=msg_boundaries_nn, update_up_nn=update_up_nn,
-                    update_boundaries_nn=update_boundaries_nn, combine_nn=combine_nn, eps=eps,
-                    train_eps=train_eps)
-            self.mp_levels.append(mp)
-
-    def forward(self, *cochain_params: CochainMessagePassingParams, start_to_process=0):
-        assert len(cochain_params) <= self.max_dim+1
-
-        out = []
-        for dim in range(len(cochain_params)):
-            if dim < start_to_process:
-                out.append(cochain_params[dim].x)
-            else:
-                out.append(self.mp_levels[dim].forward(cochain_params[dim]))
-        return out
 
 
 class SparseCINConv(torch.nn.Module):
@@ -538,6 +459,176 @@ class SparseCINConv(torch.nn.Module):
                 msg_up_nn=msg_up_nn, msg_boundaries_nn=msg_boundaries_nn, update_up_nn=update_up_nn,
                 update_boundaries_nn=update_boundaries_nn, combine_nn=combine_nn, eps=eps,
                 train_eps=train_eps, use_pos=use_pos)
+            self.mp_levels.append(mp)
+
+    def forward(self, *cochain_params: CochainMessagePassingParams, start_to_process=0):
+        assert len(cochain_params) <= self.max_dim+1
+
+        out = []
+        for dim in range(len(cochain_params)):
+            if dim < start_to_process:
+                out.append(cochain_params[dim].x)
+            else:
+                out.append(self.mp_levels[dim].forward(cochain_params[dim]))
+        return out
+
+
+class SparseInvarCINConv(torch.nn.Module):
+    """A cellular version of GIN which performs message passing from cellular upper
+    neighbors and boundaries, but not from lower neighbors (hence why "Sparse")
+    """
+
+    # TODO: Refactor the way we pass networks externally to allow for different networks per dim.
+    def __init__(self, up_msg_size: int, down_msg_size: int, boundary_msg_size: Optional[int],
+                 passed_msg_up_nn: Optional[Callable], passed_msg_boundaries_nn: Optional[Callable],
+                 passed_update_up_nn: Optional[Callable],
+                 passed_update_boundaries_nn: Optional[Callable],
+                 eps: float = 0., train_eps: bool = False, max_dim: int = 2,
+                 graph_norm=BN, use_coboundaries=False,
+                 use_pos=False, use_complete=False, **kwargs):
+        super(SparseInvarCINConv, self).__init__()
+        self.max_dim = max_dim
+        self.mp_levels = torch.nn.ModuleList()
+        for dim in range(max_dim+1):
+            msg_up_nn = passed_msg_up_nn
+            if msg_up_nn is None:
+                if use_coboundaries:
+                    if use_pos and dim == 0:
+                        msg_up_nn = Sequential(
+                                Catter(),
+                                Linear(kwargs['layer_dim'] * 2 + 1, kwargs['layer_dim']),
+                                kwargs['act_module']())
+                    else:
+                        msg_up_nn = Sequential(
+                                Catter(),
+                                Linear(kwargs['layer_dim'] * 2, kwargs['layer_dim']),
+                                kwargs['act_module']())
+                else:
+                    msg_up_nn = lambda xs: xs[0]
+
+            msg_boundaries_nn = passed_msg_boundaries_nn
+            if msg_boundaries_nn is None:
+                msg_boundaries_nn = lambda x: x
+
+            update_up_nn = passed_update_up_nn
+            if update_up_nn is None:
+                update_up_nn = Sequential(
+                    Linear(kwargs['layer_dim'], kwargs['hidden']),
+                    graph_norm(kwargs['hidden']),
+                    kwargs['act_module'](),
+                    Linear(kwargs['hidden'], kwargs['hidden']),
+                    graph_norm(kwargs['hidden']),
+                    kwargs['act_module']()
+                )
+
+            update_boundaries_nn = passed_update_boundaries_nn
+            if update_boundaries_nn is None:
+                update_boundaries_nn = Sequential(
+                    Linear(kwargs['layer_dim'], kwargs['hidden']),
+                    graph_norm(kwargs['hidden']),
+                    kwargs['act_module'](),
+                    Linear(kwargs['hidden'], kwargs['hidden']),
+                    graph_norm(kwargs['hidden']),
+                    kwargs['act_module']()
+                )
+            combine_nn = Sequential(
+                Linear(kwargs['hidden']*2, kwargs['hidden']),
+                graph_norm(kwargs['hidden']),
+                kwargs['act_module']())
+
+            mp = SparseCINCochainConv(dim, up_msg_size, down_msg_size, boundary_msg_size=boundary_msg_size,
+                msg_up_nn=msg_up_nn, msg_boundaries_nn=msg_boundaries_nn, update_up_nn=update_up_nn,
+                update_boundaries_nn=update_boundaries_nn, combine_nn=combine_nn, eps=eps,
+                train_eps=train_eps, use_pos=use_pos, use_complete=use_complete)
+            self.mp_levels.append(mp)
+
+    def forward(self, *cochain_params: CochainMessagePassingParams, start_to_process=0):
+        assert len(cochain_params) <= self.max_dim+1
+
+        out = []
+        for dim in range(len(cochain_params)):
+            if dim < start_to_process:
+                out.append(cochain_params[dim].x)
+            else:
+                out.append(self.mp_levels[dim].forward(cochain_params[dim]))
+        return out
+
+
+class SparseEquivCINConv(torch.nn.Module):
+    """A cellular version of GIN which performs message passing from cellular upper
+    neighbors and boundaries, but not from lower neighbors (hence why "Sparse")
+    """
+
+    # TODO: Refactor the way we pass networks externally to allow for different networks per dim.
+    # This?
+    def __init__(self, up_msg_size: int, down_msg_size: int, boundary_msg_size: Optional[int],
+                 passed_msg_up_nn: Optional[Callable], passed_msg_boundaries_nn: Optional[Callable],
+                 passed_update_up_nn: Optional[Callable],
+                 passed_update_boundaries_nn: Optional[Callable],
+                 eps: float = 0., train_eps: bool = False, max_dim: int = 2,
+                 graph_norm=BN, use_coboundaries=False,
+                 use_complete=False, **kwargs):
+        super(SparseEquivCINConv, self).__init__()
+        self.max_dim = max_dim
+        self.mp_levels = torch.nn.ModuleList()
+        for dim in range(max_dim+1):
+            msg_up_nn = passed_msg_up_nn
+            if msg_up_nn is None:
+                if use_coboundaries:
+                    if dim == 0:
+                        # breakpoint()
+                        msg_up_nn = Sequential(
+                                Catter(),
+                                Linear(kwargs['layer_dim'] * 2 + 1, kwargs['layer_dim']),
+                                kwargs['act_module']())
+                    else:
+                        msg_up_nn = Sequential(
+                                Catter(),
+                                Linear(kwargs['layer_dim'] * 2, kwargs['layer_dim']),
+                                kwargs['act_module']())
+                else:
+                    msg_up_nn = lambda xs: xs[0]
+
+            msg_boundaries_nn = passed_msg_boundaries_nn
+            if msg_boundaries_nn is None:
+                msg_boundaries_nn = lambda x: x
+
+            update_up_nn = passed_update_up_nn
+            if update_up_nn is None:
+                update_up_nn = Sequential(
+                    Linear(kwargs['layer_dim'], kwargs['hidden']),
+                    graph_norm(kwargs['hidden']),
+                    kwargs['act_module'](),
+                    Linear(kwargs['hidden'], kwargs['hidden']),
+                    graph_norm(kwargs['hidden']),
+                    kwargs['act_module']()
+                )
+
+            update_boundaries_nn = passed_update_boundaries_nn
+            if update_boundaries_nn is None:
+                update_boundaries_nn = Sequential(
+                    Linear(kwargs['layer_dim'], kwargs['hidden']),
+                    graph_norm(kwargs['hidden']),
+                    kwargs['act_module'](),
+                    Linear(kwargs['hidden'], kwargs['hidden']),
+                    graph_norm(kwargs['hidden']),
+                    kwargs['act_module']()
+                )
+            combine_nn = Sequential(
+                Linear(kwargs['hidden']*2, kwargs['hidden']),
+                graph_norm(kwargs['hidden']),
+                kwargs['act_module']())
+
+            if dim == 0:
+                mp = SparseEquivCINCochainConv(dim, up_msg_size, down_msg_size, boundary_msg_size=boundary_msg_size,
+                    msg_up_nn=msg_up_nn, msg_boundaries_nn=msg_boundaries_nn, update_up_nn=update_up_nn,
+                    update_boundaries_nn=update_boundaries_nn, combine_nn=combine_nn, eps=eps,
+                    train_eps=train_eps, use_complete=use_complete)
+            else:
+                mp = SparseCINCochainConv(dim, up_msg_size, down_msg_size, boundary_msg_size=boundary_msg_size,
+                    msg_up_nn=msg_up_nn, msg_boundaries_nn=msg_boundaries_nn, update_up_nn=update_up_nn,
+                    update_boundaries_nn=update_boundaries_nn, combine_nn=combine_nn, eps=eps,
+                    train_eps=train_eps)
             self.mp_levels.append(mp)
 
     def forward(self, *cochain_params: CochainMessagePassingParams, start_to_process=0):
@@ -708,11 +799,11 @@ class OGBEmbedVEWithReduce(AbstractEmbedVEWithReduce):
         assert v_params.x.dim() == 2
         # Inputs in ogbg-mol* datasets are already long.
         # This is to test the layer with other datasets.
-        return v_params.x.to(dtype=torch.long)
+        return v_params.x#.to(dtype=torch.long)
     
     def _prepare_e_inputs(self, e_params):
         assert self.e_embed_layer is not None
         assert e_params.x.dim() == 2
         # Inputs in ogbg-mol* datasets are already long.
         # This is to test the layer with other datasets.
-        return e_params.x.to(dtype=torch.long)
+        return e_params.x#.to(dtype=torch.long)

@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "";# os.environ["PYTHONBREAKPOINT"] = "0" # IMPORTANT: SET CUDA AND BREAKPOINTS
+# os.environ["CUDA_VISIBLE_DEVICES"] = "";# os.environ["PYTHONBREAKPOINT"] = "0" # IMPORTANT: SET CUDA AND BREAKPOINTS
 import numpy as np
 import copy
 import pickle
@@ -291,6 +291,7 @@ def main(args):
                                   graph_norm=args.graph_norm,              # normalization layer
                                   readout_dims=readout_dims,               # readout_dims
                                   use_pos=args.use_pos,                     # use positional parameters
+                                  use_complete=args.use_complete, 
                                  ).to(device)
     elif args.model == 'qm9_embed_equiv_sparse_cin':
         model = QM9EmbedEquivSparseCIN(1,                                       # out_size
@@ -308,6 +309,7 @@ def main(args):
                                   embed_edge=args.use_edge_features,       # whether to use edge feats
                                   graph_norm=args.graph_norm,              # normalization layer
                                   readout_dims=readout_dims,               # readout_dims
+                                  use_complete=args.use_complete, 
                                  ).to(device)
     else:
         raise ValueError('Invalid model type {}.'.format(args.model))
@@ -354,15 +356,18 @@ def main(args):
 
             # perform one epoch
             print("=====Epoch {}".format(epoch))
+            print(f"{args.dataset}, {args.exp_name}, seed:{args.seed}")
             print('Training...')
+            # The number of batches processed gives the epoch_train_curve.
+            # It's not really the train
             epoch_train_curve = train(model, device, train_loader, optimizer, args.task_type)
             train_loss_curve += epoch_train_curve
             epoch_train_loss = float(np.mean(epoch_train_curve))
 
             # evaluate model
             print('Evaluating...')
-            if epoch == 1 or epoch % args.train_eval_period == 0:
-                train_perf, _ = eval(model, device, train_loader, evaluator, args.task_type)
+            # if epoch == 1 or epoch % args.train_eval_period == 0:
+            train_perf, _ = eval(model, device, train_loader, evaluator, args.task_type)
             train_curve.append(train_perf)
             valid_perf, epoch_val_loss = eval(model, device,
                 valid_loader, evaluator, args.task_type)#, dataset[split_idx["valid"]])

@@ -113,6 +113,7 @@ def get_parser():
                         help='Jobs to use for the dataset preprocessing. For all jobs use "-1".'
                              'For sequential processing (no parallelism) use "1"')
     parser.add_argument('--use_pos', action='store_true', help='Use spacial arguments.')
+    parser.add_argument('--use_complete', action='store_true', help='Complete the graph for cochain 0.')
     return parser
 
 
