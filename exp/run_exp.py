@@ -4,7 +4,7 @@ import numpy as np
 import copy
 import pickle
 import torch
-# torch.set_num_threads(4) # IMPORTANT: SET CPU THREADS HERE
+torch.set_num_threads(4) # IMPORTANT: SET CPU THREADS HERE
 import torch.optim as optim
 import random
 
