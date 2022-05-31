@@ -3,7 +3,7 @@
 python -m exp.run_mol_exp \
   --device 0 \
   --start_seed 0 \
-  --stop_seed 4 \
+  --stop_seed 0 \
   --init_method sum \
   --readout mean \
   --final_readout sum \

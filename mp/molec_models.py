@@ -348,7 +348,7 @@ class QM9EmbedEquivSparseCIN(torch.nn.Module):
                  nonlinearity='relu', readout='sum', train_eps=False, final_hidden_multiplier: int = 2,
                  readout_dims=(0, 1, 2), final_readout='sum', apply_dropout_before='lin2',
                  init_reduce='sum', embed_edge=False, embed_dim=None, use_coboundaries=False,
-                 graph_norm='bn'):
+                 graph_norm='bn', use_complete=False):
         super(QM9EmbedEquivSparseCIN, self).__init__()
 
         self.max_dim = max_dim
@@ -387,7 +387,8 @@ class QM9EmbedEquivSparseCIN(torch.nn.Module):
                     passed_msg_up_nn=None, passed_update_up_nn=None,
                     passed_update_boundaries_nn=None, train_eps=train_eps, max_dim=self.max_dim,
                     hidden=hidden, act_module=act_module, layer_dim=layer_dim,
-                    graph_norm=self.graph_norm, use_coboundaries=use_coboundaries))
+                    graph_norm=self.graph_norm, use_coboundaries=use_coboundaries,
+                    use_complete=use_complete))
         self.jump = JumpingKnowledge(jump_mode) if jump_mode is not None else None
         self.lin1s = torch.nn.ModuleList()
         for _ in range(max_dim + 1):
