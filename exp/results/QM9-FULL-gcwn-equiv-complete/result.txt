@@ -1,0 +1,18 @@
+========= Final result ==========
+Dataset:                QM9-FULL
+SHA:                    7a00675
+----------- Best epoch ----------
+Train:                  0.06315872818231583 ± nan
+Valid:                  0.08711575716733932 ± nan
+Test:                   0.08611433953046799 ± nan
+Test Min:               0.08611433953046799
+Test Max:               0.08611433953046799
+----------- Last epoch ----------
+Train:                  0.0636640340089798 ± nan
+Valid:                  0.0879860669374466 ± nan
+Test:                   0.08684670180082321 ± nan
+Test Min:               0.08684670180082321
+Test Max:               0.08684670180082321
+---------------------------------
+
+Namespace(batch_size=128, dataset='QM9-FULL', device=0, drop_position='lin2', drop_rate=0.0, dump_curves=True, early_stop=True, emb_dim=64, epochs=200, eval_metric='mae', exp_name='gcwn-equiv-complete', final_readout='sum', flow_classes=3, flow_points=400, fold=None, folds=None, fully_orient_invar=False, graph_norm='bn', indrop_rate=0.0, init_method='sum', iso_eps=0.01, jump_mode=None, lr=0.0001, lr_scheduler='ReduceLROnPlateau', lr_scheduler_decay_rate=0.5, lr_scheduler_decay_steps=50, lr_scheduler_min=1e-05, lr_scheduler_patience=10.0, max_dim=2, max_ring_size=18, minimize=True, model='qm9_embed_equiv_sparse_cin', nonlinearity='relu', num_layers=2, num_workers=0, paraid=0, preproc_jobs=32, readout='mean', readout_dims=(0, 1, 2), result_folder='/home/da537/cin/exp/results', seed=43, simple_features=False, start_seed=0, stop_seed=0, task_type='regression', test_orient='default', train_eval_period=10, train_orient='default', tune=False, untrained=False, use_coboundaries='True', use_complete=True, use_edge_features=True, use_pos=False)

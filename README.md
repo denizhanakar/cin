@@ -44,10 +44,11 @@ conda activate cwn
 conda install pip # Make sure the environment pip is used
 ```
 
+(No more conda install -y pytorch=1.7.0 torchvision cudatoolkit=10.2 -c pytorch since 1.7.0 deprecated)
 Install dependencies:
 ```shell
 sh graph-tool_install.sh
-conda install -y pytorch=1.7.0 torchvision cudatoolkit=10.2 -c pytorch
+conda install pytorch==1.7.1 torchvision==0.8.2 torchaudio==0.7.2 cudatoolkit=10.2 -c pytorch
 sh pyG_install.sh cu102
 pip install -r requirements.txt
 ```
