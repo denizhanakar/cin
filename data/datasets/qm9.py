@@ -75,9 +75,9 @@ class QM9Dataset(InMemoryComplexDataset):
         
         perm = torch.randperm(len(dataset))
         if self._subset:
-            train_slice = perm[:1000]
-            val_slice = perm[1000:2000]
-            test_slice = perm[2000:3000]
+            train_slice = perm[:10000]
+            val_slice = perm[10000:12000]
+            test_slice = perm[12000:13000]
 
             train_data = dataset[train_slice]
             val_data = dataset[val_slice]
