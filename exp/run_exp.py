@@ -366,8 +366,8 @@ def main(args):
 
             # evaluate model
             print('Evaluating...')
-            # if epoch == 1 or epoch % args.train_eval_period == 0:
-            train_perf, _ = eval(model, device, train_loader, evaluator, args.task_type)
+            if epoch == 1 or epoch % args.train_eval_period == 0:
+                train_perf, _ = eval(model, device, train_loader, evaluator, args.task_type)
             train_curve.append(train_perf)
             valid_perf, epoch_val_loss = eval(model, device,
                 valid_loader, evaluator, args.task_type)#, dataset[split_idx["valid"]])
