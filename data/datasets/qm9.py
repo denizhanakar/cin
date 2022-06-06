@@ -73,11 +73,12 @@ class QM9Dataset(InMemoryComplexDataset):
         # Get the old mean and std of our target dipole moments.
         mean, std = mean[:, target].item(), std[:, target].item()
         
+        torch.manual_seed(0)
         perm = torch.randperm(len(dataset))
         if self._subset:
             train_slice = perm[:10000]
-            val_slice = perm[10000:12000]
-            test_slice = perm[12000:13000]
+            val_slice = perm[10000:11000]
+            test_slice = perm[11000:12000]
 
             train_data = dataset[train_slice]
             val_data = dataset[val_slice]

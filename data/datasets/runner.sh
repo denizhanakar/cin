@@ -11,8 +11,8 @@ models=('gcwn' 'gcwn-equiv' 'cwn')
 for model in "${models[@]}"; do
     printf "CURRENTLY RUNNING $model COMPLETE\n"
     ./exp/scripts/qm9/complete/$model.sh
-    printf "CURRENTLY RUNNING $model DEFAULT\n"
-    ./exp/scripts/qm9/default/$model.sh
+    # printf "CURRENTLY RUNNING $model DEFAULT\n"
+    # ./exp/scripts/qm9/default/$model.sh
 done
 
 # modelalt=('gcwn' 'cwn')

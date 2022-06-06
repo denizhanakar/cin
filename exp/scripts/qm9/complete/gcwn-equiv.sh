@@ -2,7 +2,7 @@
 
 python -m exp.run_mol_exp \
   --device 0 \
-  --start_seed 0 \
+  --start_seed 1 \
   --stop_seed 4 \
   --init_method sum \
   --readout mean \
@@ -16,7 +16,7 @@ python -m exp.run_mol_exp \
   --drop_rate 0.0 \
   --drop_position lin2 \
   --max_dim 2 \
-  --lr 0.0001 \
+  --lr 0.001 \
   --graph_norm bn \
   --model qm9_embed_equiv_sparse_cin \
   --nonlinearity relu \

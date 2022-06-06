@@ -2,13 +2,13 @@
 
 python -m exp.run_mol_exp \
   --device 0 \
-  --start_seed 1 \
+  --start_seed 2 \
   --stop_seed 4 \
   --init_method sum \
   --readout mean \
   --final_readout sum \
   --emb_dim 64 \
-  --exp_name gcwn-complete \
+  --exp_name cwn \
   --dataset QM9 \
   --train_eval_period 10 \
   --epochs 200 \
@@ -16,9 +16,10 @@ python -m exp.run_mol_exp \
   --drop_rate 0.0 \
   --drop_position lin2 \
   --max_dim 2 \
-  --lr 0.001 \
+  --lr 0.0001 \
   --graph_norm bn \
-  --model qm9_embed_sparse_cin \
+  # --model qm9_embed_sparse_cin \
+  --model qm9_schnet \
   --nonlinearity relu \
   --num_layers 2 \
   --max_ring_size 18 \
@@ -31,6 +32,4 @@ python -m exp.run_mol_exp \
   --early_stop \
   --lr_scheduler_patience 10 \
   --dump_curves \
-  --use_pos \
-  --use_complete \
   --preproc_jobs 32
