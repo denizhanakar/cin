@@ -18,7 +18,7 @@ matplotlib==3.3.3
 joblib==1.2.0
 networkx==2.5
 numpy==1.22.0
-tqdm==4.54.1
+tqdm==4.66.3
 scikit-learn==1.0.1
 scipy==1.10.0
 h5py==3.1.0
